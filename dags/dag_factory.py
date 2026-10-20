@@ -96,7 +96,11 @@ def create_spark_dag(entrypoint_file: str, schedule: str | None) -> DAG:
         container_name=f"{environment}-{workload_name.replace('_', '-')}",
         docker_url=docker_url,
         network_mode=docker_network,
-        environment={"AWS_REGION": aws_region, "AWS_DEFAULT_REGION": aws_region},
+        environment={
+            "AWS_REGION": aws_region,
+            "AWS_DEFAULT_REGION": aws_region,
+            "PYTHONPATH": str(CONTAINER_BUNDLE_ROOT),
+        },
         mounts=[
             Mount(
                 target=str(CONTAINER_BUNDLE_ROOT),

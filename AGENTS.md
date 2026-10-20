@@ -5,8 +5,8 @@
 This repository contains environment-configured Python Spark workloads and Airflow DAGs. Airflow submits workloads to an externally managed Spark service. A shared Airflow 3 deployment reads versioned Git DAG Bundles; Jenkins validates and gates repository changes but does not publish artifacts.
 
 - `configs/`: One non-secret YAML file per environment: `dev.yml`, `uat.yml`, and `prod.yml`. Each defines `storage_path` and `database_name`.
-- `notebooks/common/`: Shared config loader and standard workload CLI argument parser.
-- `notebooks/workload/`: Exported Python Spark jobs. Keep environment values in YAML.
+- `notebooks/common/`: Shared config loader, standard workload CLI parser, and Spark job bootstrap for Jupyter and `spark-submit`.
+- `notebooks/workload/`: Exported Python Spark jobs and Jupytext-compatible Jupyter helper scripts. Keep environment values in YAML.
 - `dags/`: Thin DAG declarations, `dag_factory.py` for standard validation and Docker Spark tasks, and `dag_defaults.py` for shared DAG settings and bundle-name environment selection.
 - `airflow_bundle_config.example.json`: Secret-free example `dag_bundle_config_list` with a dev branch placeholder plus fixed UAT and production refs.
 - `airflow_bundle_client.py`: Operator CLI that changes only `lakehouse-dev.tracking_ref` in the deployment-managed bundle config. Its apply command is deployment-specific and supplied externally.
