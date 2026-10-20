@@ -181,17 +181,22 @@ def test_example_bundle_config_has_isolated_environment_dag_paths() -> None:
         assert "notebooks" in sparse_dirs
 
 
-def test_single_dag_folder_resolves_bundle_files_and_uses_bundle_identity() -> None:
+def test_dag_factory_reuses_spark_container_for_bundle_workloads() -> None:
     dag_path = REPOSITORY_ROOT / "dags" / "init_environment.py"
     source = dag_path.read_text(encoding="utf-8")
     factory_path = REPOSITORY_ROOT / "dags" / "dag_factory.py"
     factory = factory_path.read_text(encoding="utf-8")
 
     assert dag_path.is_file()
-    assert 'entrypoint_file="init_environment.py"' in source
+    assert '"initialize_environment_first", "init_environment.py"' in source
+    assert '"initialize_environment_second", "init_environment.py"' in source
     assert "schedule=None" in source
     assert "create_spark_dag(" in source
-    assert "DockerOperator(" in factory
+    assert 'task_id="validate_environment"' in factory
+    assert 'task_id="create_cluster"' in factory
+    assert 'task_id="stop_cluster"' in factory
+    assert "_submit_spark_job" in factory
+    assert "TriggerRule.ALL_DONE" in factory
     assert '"/opt/spark/bin/spark-submit"' in factory
     assert "identity_for_bundle(DAGS_DIR)" in factory
     assert "dag_id_prefix=dag_id_prefix" in factory

@@ -42,4 +42,16 @@ After switching, confirm in Airflow that the dev DAG is available from the inten
 
 ## Spark application path requirement
 
-The sample DAG derives the repository root from its location inside the bundle version and uses `DockerOperator` to launch the configured Spark job image. The DAG bind-mounts the bundle checkout read-only into that container, then runs `/opt/spark/bin/spark-submit` against the workload, helper, and environment config from that mount. The image must include a compatible Spark runtime and PyYAML. Configure `LAKEHOUSE_SPARK_IMAGE`, `LAKEHOUSE_SPARK_MASTER` (defaults to `local[*]`), `LAKEHOUSE_DOCKER_URL`, and `LAKEHOUSE_SPARK_DOCKER_NETWORK` in Airflow. The Docker daemon must be able to access the same bundle-checkout path that the task runner resolved. Verify this host path mapping and selected bundle-commit version before using the setup for shared environments.
+The sample DAG derives the repository root from its location inside the bundle version. It validates the environment config, creates one reusable Spark Docker container with the bundle mounted read-only, submits each named workload sequentially with `/opt/spark/bin/spark-submit`, then removes the container in a cleanup task that runs after success or failure. Declare workloads as `(task_name, entrypoint_file)` pairs; the same entrypoint can appear under different task names. For example:
+
+```python
+dag = create_spark_dag(
+    workloads=(
+        ("initialize_environment_first", "init_environment.py"),
+        ("initialize_environment_second", "init_environment.py"),
+    ),
+    schedule=None,
+)
+```
+
+Each submission starts a separate Spark application in `local[*]` mode inside the shared container. This is a single-container setup, not a distributed Spark master/worker cluster. The image must include a compatible Spark runtime and PyYAML. Configure `LAKEHOUSE_SPARK_IMAGE`, `LAKEHOUSE_SPARK_MASTER` (defaults to `local[*]`), `LAKEHOUSE_DOCKER_URL`, and `LAKEHOUSE_SPARK_DOCKER_NETWORK` in Airflow. The Docker daemon must be able to access the same bundle-checkout path that the task runner resolved. Verify this host path mapping and selected bundle-commit version before using the setup for shared environments.
