@@ -189,8 +189,11 @@ def test_dag_factory_reuses_spark_container_for_bundle_workloads() -> None:
 
     assert dag_path.is_file()
     assert 'dag_name="init_environment"' in source
-    assert '"initialize_environment_first", "init_environment.py"' in source
-    assert '"initialize_environment_second", "init_environment.py"' in source
+    assert '"task_name": "initialize_environment_first"' in source
+    assert '"task_name": "initialize_environment_second"' in source
+    assert '"task_name": "count_sample_rows"' in source
+    assert '"entrypoint_file": "count_sample_rows.py"' in source
+    assert '"runs_after": ("initialize_environment_first",)' in source
     assert "schedule=None" in source
     assert "create_spark_dag(" in source
     assert 'task_id="validate_environment"' in factory

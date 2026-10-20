@@ -5,8 +5,10 @@ import logging
 import os
 import re
 import sys
+from collections.abc import Mapping, Sequence
+from dataclasses import dataclass
 from pathlib import Path
-from typing import Sequence
+from typing import Any
 
 import docker
 from airflow import DAG
@@ -23,6 +25,15 @@ CONTAINER_BUNDLE_ROOT = Path("/opt/lakehouse-bundle")
 LOGGER = logging.getLogger(__name__)
 
 
+@dataclass(frozen=True)
+class SparkWorkload:
+    """Normalized workload entry used to construct submit tasks."""
+
+    task_name: str
+    entrypoint_file: str
+    runs_after: tuple[str, ...]
+
+
 def _validate_environment_config(environment: str, config_dir: str) -> None:
     """Validate the bundle version's environment YAML before Spark startup.
 
@@ -34,6 +45,86 @@ def _validate_environment_config(environment: str, config_dir: str) -> None:
     from config_loader import load_environment_config
 
     load_environment_config(environment, config_dir)
+
+
+def _normalize_workloads(workloads: Sequence[Mapping[str, Any]]) -> tuple[SparkWorkload, ...]:
+    """Validate workload declarations and their task dependency graph.
+
+    Args:
+        workloads: Workload mappings with task name, entrypoint, and optional
+            predecessor task names.
+
+    Returns:
+        Validated workloads in declaration order.
+
+    Raises:
+        ValueError: If declarations are invalid, dependencies are unknown, or
+            the dependency graph contains a cycle.
+        FileNotFoundError: If an entrypoint file is missing from the bundle.
+    """
+    if not workloads:
+        raise ValueError("At least one Spark workload entrypoint is required.")
+
+    normalized = []
+    allowed_keys = {"task_name", "entrypoint_file", "runs_after"}
+    for declaration in workloads:
+        if not isinstance(declaration, Mapping):
+            raise ValueError("Each workload must be a mapping with task_name and entrypoint_file fields.")
+        unknown_keys = set(declaration) - allowed_keys
+        if unknown_keys:
+            raise ValueError(f"Unknown workload fields: {', '.join(sorted(unknown_keys))}")
+
+        task_name = declaration.get("task_name")
+        entrypoint_file = declaration.get("entrypoint_file")
+        raw_dependencies = declaration.get("runs_after", ())
+        if not isinstance(task_name, str) or not re.fullmatch(r"[a-zA-Z0-9_.-]+", task_name):
+            raise ValueError(f"Invalid Spark workload task name: {task_name!r}")
+        if not isinstance(entrypoint_file, str):
+            raise ValueError(f"Invalid Python entrypoint for workload {task_name!r}.")
+        if Path(entrypoint_file).name != entrypoint_file or not entrypoint_file.endswith(".py"):
+            raise ValueError("Each entrypoint must be a Python filename in notebooks/workload/.")
+        if raw_dependencies is None:
+            dependencies = ()
+        elif isinstance(raw_dependencies, str):
+            dependencies = (raw_dependencies,)
+        elif isinstance(raw_dependencies, Sequence):
+            dependencies = tuple(raw_dependencies)
+        else:
+            raise ValueError(f"runs_after for workload {task_name!r} must be a task name or sequence.")
+        if any(not isinstance(dependency, str) for dependency in dependencies):
+            raise ValueError(f"runs_after for workload {task_name!r} must contain task names.")
+        if len(set(dependencies)) != len(dependencies):
+            raise ValueError(f"runs_after for workload {task_name!r} contains duplicate task names.")
+
+        workload_path = BUNDLE_ROOT / "notebooks" / "workload" / entrypoint_file
+        if not workload_path.is_file():
+            raise FileNotFoundError(f"Spark workload entrypoint does not exist: {workload_path}")
+        normalized.append(SparkWorkload(task_name, entrypoint_file, dependencies))
+
+    task_names = {workload.task_name for workload in normalized}
+    if len(task_names) != len(normalized):
+        raise ValueError("Spark workload task names must be unique.")
+    for workload in normalized:
+        unknown_dependencies = set(workload.runs_after) - task_names
+        if unknown_dependencies:
+            raise ValueError(
+                f"Workload {workload.task_name!r} runs after unknown tasks: "
+                f"{', '.join(sorted(unknown_dependencies))}."
+            )
+        if workload.task_name in workload.runs_after:
+            raise ValueError(f"Workload {workload.task_name!r} cannot run after itself.")
+
+    resolved = set()
+    unresolved = {workload.task_name: set(workload.runs_after) for workload in normalized}
+    while unresolved:
+        ready = {name for name, dependencies in unresolved.items() if dependencies <= resolved}
+        if not ready:
+            raise ValueError("Spark workload runs_after dependencies contain a cycle.")
+        resolved.update(ready)
+        for name in ready:
+            del unresolved[name]
+
+    return tuple(normalized)
 
 
 def _container_name(dag_id: str, run_id: str) -> str:
@@ -183,45 +274,31 @@ def _stop_spark_container(docker_url: str, **context: object) -> None:
 
 def create_spark_dag(
     dag_name: str,
-    workloads: Sequence[tuple[str, str]],
+    workloads: Sequence[Mapping[str, Any]],
     schedule: str | None,
 ) -> DAG:
     """Create a standard config-validation and reusable Spark-container DAG.
 
     Args:
         dag_name: Name used in the Airflow DAG ID and description.
-        workloads: Ordered ``(task_name, entrypoint_file)`` pairs. Entrypoint
-            files may repeat; each named workload is submitted sequentially to
-            the same Spark container.
+        workloads: Ordered mappings with ``task_name`` and ``entrypoint_file``;
+            optional ``runs_after`` names predecessor tasks. Entrypoint files
+            may repeat. Workloads without predecessors run in parallel.
         schedule: Airflow schedule; pass ``None`` for manual-only execution.
 
     Returns:
         A DAG with config validation, container lifecycle, and submit tasks.
 
     Raises:
-        ValueError: If a task name is invalid or a job entrypoint is not a
-            simple Python filename.
-        FileNotFoundError: If any workload file is missing.
+        ValueError: If a workload declaration or dependency graph is invalid.
+        FileNotFoundError: If a workload file is missing.
     """
-    if not workloads:
-        raise ValueError("At least one Spark workload entrypoint is required.")
     if not re.fullmatch(r"[a-zA-Z0-9_.-]+", dag_name):
         raise ValueError(f"Invalid DAG name: {dag_name!r}")
-    task_names = [task_name for task_name, _ in workloads]
-    if len(set(task_names)) != len(task_names):
-        raise ValueError("Spark workload task names must be unique.")
-
-    for task_name, entrypoint_file in workloads:
-        if not re.fullmatch(r"[a-zA-Z0-9_.-]+", task_name):
-            raise ValueError(f"Invalid Spark workload task name: {task_name!r}")
-        if Path(entrypoint_file).name != entrypoint_file or not entrypoint_file.endswith(".py"):
-            raise ValueError("Each entrypoint must be a Python filename in notebooks/workload/.")
-        workload_path = BUNDLE_ROOT / "notebooks" / "workload" / entrypoint_file
-        if not workload_path.is_file():
-            raise FileNotFoundError(f"Spark workload entrypoint does not exist: {workload_path}")
+    normalized_workloads = _normalize_workloads(workloads)
 
     dag_id_prefix, environment = identity_for_bundle(DAGS_DIR)
-    workload_names = [task_name for task_name, _ in workloads]
+    workload_names = [workload.task_name for workload in normalized_workloads]
     config_path = CONFIG_DIR / f"{environment}.yml"
     container_config_path = str(CONTAINER_BUNDLE_ROOT / config_path.relative_to(BUNDLE_ROOT))
     spark_job_image = os.environ.get("LAKEHOUSE_SPARK_IMAGE", "airflow-spark-job:3.5.5_1.8.1")
@@ -235,7 +312,7 @@ def create_spark_dag(
             environment=environment,
             workload_name=dag_name,
             description=(
-                f"Run {dag_name} using {', '.join(workload_names)} sequentially in one Spark container "
+                f"Run {dag_name} using {', '.join(workload_names)} in one Spark container "
                 f"for the {environment} bundle environment."
             ),
             schedule=schedule,
@@ -264,13 +341,13 @@ def create_spark_dag(
         dag=dag,
     )
 
-    submit_tasks = []
-    for task_name, entrypoint_file in workloads:
+    submit_tasks = {}
+    for workload in normalized_workloads:
         submit_task = PythonOperator(
-            task_id=f"submit_{task_name}",
+            task_id=f"submit_{workload.task_name}",
             python_callable=_submit_spark_job,
             op_kwargs={
-                "entrypoint_file": entrypoint_file,
+                "entrypoint_file": workload.entrypoint_file,
                 "environment": environment,
                 "config_path": container_config_path,
                 "docker_url": docker_url,
@@ -278,7 +355,7 @@ def create_spark_dag(
             },
             dag=dag,
         )
-        submit_tasks.append(submit_task)
+        submit_tasks[workload.task_name] = submit_task
 
     stop_cluster = PythonOperator(
         task_id="stop_cluster",
@@ -289,9 +366,12 @@ def create_spark_dag(
     )
 
     validate_environment >> create_cluster
-    previous_task = create_cluster
-    for submit_task in submit_tasks:
-        previous_task >> submit_task
-        previous_task = submit_task
-    previous_task >> stop_cluster
+    for workload in normalized_workloads:
+        submit_task = submit_tasks[workload.task_name]
+        if workload.runs_after:
+            for predecessor in workload.runs_after:
+                submit_tasks[predecessor] >> submit_task
+        else:
+            create_cluster >> submit_task
+        submit_task >> stop_cluster
     return dag

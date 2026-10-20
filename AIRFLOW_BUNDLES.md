@@ -42,14 +42,26 @@ After switching, confirm in Airflow that the dev DAG is available from the inten
 
 ## Spark application path requirement
 
-The sample DAG derives the repository root from its location inside the bundle version. It validates the environment config, creates one reusable Spark Docker container with the bundle mounted read-only, submits each named workload sequentially with `/opt/spark/bin/spark-submit`, then removes the container in a cleanup task that runs after success or failure. Declare workloads as `(task_name, entrypoint_file)` pairs; the same entrypoint can appear under different task names. For example:
+The sample DAG derives the repository root from its location inside the bundle version. It validates the environment config, creates one reusable Spark Docker container with the bundle mounted read-only, submits named workloads with `/opt/spark/bin/spark-submit`, then removes the container in a cleanup task that runs after success or failure. Declare each workload with `task_name` and `entrypoint_file`; the same entrypoint can appear under different task names. Optional `runs_after` names one or more predecessor tasks. A workload without `runs_after` runs in parallel with other root workloads after container creation. For example:
 
 ```python
 dag = create_spark_dag(
     dag_name="init_environment",
     workloads=(
-        ("initialize_environment_first", "init_environment.py"),
-        ("initialize_environment_second", "init_environment.py"),
+        {
+            "task_name": "initialize_environment_first",
+            "entrypoint_file": "init_environment.py",
+        },
+        {
+            "task_name": "initialize_environment_second",
+            "entrypoint_file": "init_environment.py",
+            "runs_after": ("initialize_environment_first",),
+        },
+        {
+            "task_name": "count_sample_rows",
+            "entrypoint_file": "count_sample_rows.py",
+            "runs_after": ("initialize_environment_first",),
+        },
     ),
     schedule=None,
 )
