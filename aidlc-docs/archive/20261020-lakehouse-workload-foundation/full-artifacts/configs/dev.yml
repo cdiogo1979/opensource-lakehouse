@@ -1,0 +1,3 @@
+# Local RustFS bucket and Nessie namespace used by the development Compose stack.
+storage_path: "s3a://lake/opensource-lakehouse/dev/"
+database_name: "lakehouse_dev"

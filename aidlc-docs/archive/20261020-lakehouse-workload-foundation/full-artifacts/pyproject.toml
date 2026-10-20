@@ -1,0 +1,28 @@
+[tool.black]
+line-length = 200
+target-version = ["py311"]
+extend-exclude = '''
+/(\.git|\.venv|venv|aidlc-docs)/
+'''
+
+[tool.ruff]
+line-length = 200
+target-version = "py311"
+extend-exclude = ["aidlc-docs"]
+builtins = ["dbutils", "spark"]
+
+[tool.ruff.lint]
+select = ["E4", "E7", "E9", "F"]
+
+[tool.ruff.lint.per-file-ignores]
+"notebooks/**/*.py" = ["E402"]
+
+
+[tool.flake8]
+max-line-length = 200
+ignore = ["E402"]
+exclude = [".git", ".venv", "venv", "aidlc-docs"]
+builtins = "spark,dbutils"
+
+[tool.bandit]
+exclude_dirs = ["aidlc-docs"]

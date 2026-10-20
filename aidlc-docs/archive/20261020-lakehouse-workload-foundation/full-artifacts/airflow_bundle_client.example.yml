@@ -1,0 +1,14 @@
+# Deployment-owned client settings. Do not add credentials here.
+bundle_config_path: /etc/airflow/lakehouse/dag_bundle_config_list.json
+dev_bundle_name: lakehouse-dev
+
+# The client only accepts feature refs using one of these branch prefixes.
+allowed_branch_prefixes:
+  - "feature/"
+
+# Platform command that applies this config and reloads/restarts the required
+# Airflow components. Arguments are passed directly without a shell.
+apply_command:
+  - /usr/local/bin/apply-airflow-bundle-config
+  - --config
+  - "{config_path}"

@@ -1,0 +1,92 @@
+{
+  "intent_id": "20261020-lakehouse-workload-foundation",
+  "name": "Lakehouse workload foundation and Airflow Git Bundle deployment",
+  "objective": "Establish environment-configured Python Spark workloads and versioned Airflow deployment using Git DAG Bundles, with an operator-controlled development branch selector.",
+  "date": "2026-10-20",
+  "scope": "Includes repository configuration, common Spark CLI and config loading, environment initialization workload, Airflow DAG factory and Git Bundle deployment/client, Jenkins CI, tests, operational documentation, and AI-DLC design records. Excludes Airflow/platform deployment, PR creation, Git push, and live Spark integration.",
+  "workstreams": [
+    "workload-foundation",
+    "jenkins-deployment"
+  ],
+  "verification": {
+    "status": "waived",
+    "user_accepted": true,
+    "details": "User-approved verification waiver. Compile validation, 48 unit/property tests, Ruff, and Black passed. Flake8 still reports two E203 warnings; Bandit reports 67 low-severity findings. Live confirmation that the .airflowignore fix parses in Airflow and Spark/Nessie/object-storage integration were not completed. These are limitations, not passed checks."
+  },
+  "artifact_inventory_complete": true,
+  "summary": {
+    "major_requirements": [
+      "Provide configs/, notebooks/, and dags/ as the workload foundation.",
+      "Keep one YAML per dev/uat/prod environment with required storage_path and database_name, while allowing arbitrary nested application settings.",
+      "Run Python Spark workloads from Airflow with config and code pinned to the same Git revision.",
+      "Support trusted feature-branch testing for the development Git DAG Bundle.",
+      "Keep Jenkins as compile and unit-test CI without copying files into Airflow."
+    ],
+    "design_decisions": [
+      "Airflow 3 Git DAG Bundles fetch the repository root and use stable bundle names to select runtime environment configuration and DAG ID prefix.",
+      "Bundle mapping: lakehouse-main/lakehouse-prod -> prod.yml and main-; lakehouse-uat -> uat.yml and uat-; all other bundle names -> dev.yml and dev-.",
+      "Airflow uses a common DAG factory and DockerOperator to execute spark-submit; each DAG declaration supplies its workload entrypoint and schedule.",
+      "Environment identity is derived in Airflow from bundle identity, so a shared branch does not require a branch-specific marker file.",
+      "Secrets and runtime credentials are external to repository YAML and deployment examples."
+    ],
+    "implementation_decisions": [
+      "The generic config loader validates required current workload keys and provides arbitrary nested YAML data; common CLI parsing is in notebooks/common/cli.py.",
+      "init_environment creates the configured namespace if absent, then overwrites only the dedicated two-row synthetic sample_spark_job_output table.",
+      "The table write creates the object-storage prefix; the workload does not use Hadoop S3A solely to create a directory marker.",
+      "The operator client validates feature refs and changes only lakehouse-dev tracking_ref, invoking a deployment-owned apply/reload command.",
+      "Jenkins compiles the Python client, DAGs, and workloads and runs pytest; it does not publish files or mutate Airflow bundle refs."
+    ],
+    "deviations": [
+      "Verification waiver accepted by user with the remaining Flake8/Bandit findings and unverified live Airflow/Spark integrations listed above.",
+      "The local Airflow deployment observed during troubleshooting used lakehouse-main, while the example three-bundle configuration uses lakehouse-prod for the main branch; deployment owners must reconcile this platform-specific naming.",
+      "No PR, push, or platform deployment was performed."
+    ],
+    "superseded_decisions": [
+      "Environment-specific dags/dev, dags/uat, and dags/prod folder layouts and a branch-specific .lakehouse-environment marker were superseded by one root dags/ layout with environment identity derived from the Airflow bundle name.",
+      "Jenkins/SFTP file-copy publication and a direct deployment adapter were superseded by Airflow Git DAG Bundles; the client only selects a development bundle ref.",
+      "A Spark sample output job evolved into init_environment, which initializes the namespace and writes one dedicated synthetic smoke table.",
+      "Direct Hadoop S3A prefix creation was removed; the table write creates the object keys/prefix.",
+      "Parsing standard CLI arguments inside config_loader.py was superseded by a shared CLI module so config loading remains reusable."
+    ]
+  },
+  "canonical_updates": [
+    {
+      "path": "aidlc-docs/knowledge/opensource-lakehouse/application-design.md",
+      "content": "# Open Source Lakehouse Application Design\n\n## Purpose and boundaries\n\nThis repository holds non-secret environment configuration, exported Python Spark workloads, and Airflow DAG sources. Airflow 3 Git DAG Bundles fetch versioned repository refs. A DAG validates environment configuration, then uses `DockerOperator` to launch the configured Spark job image and run `spark-submit`. The Spark workload uses Nessie-compatible catalog operations and S3-compatible storage. Jenkins runs compile and unit-test CI; it does not publish files to Airflow or change bundle refs.\n\nAirflow, its Git/Docker providers, the Docker daemon, Spark, Nessie, S3-compatible storage, runtime credentials, bundle configuration, and deployment reload behavior are externally managed.\n\n## Repository components\n\n| Component | Responsibility |\n|---|---|\n| `configs/` | One YAML file for `dev`, `uat`, and `prod`; `storage_path` and `database_name` are required. Additional top-level and nested application settings are allowed. Secrets are external. |\n| `notebooks/common/config_loader.py` | Strictly load an explicitly selected YAML mapping, validate the required current workload keys, and preserve arbitrary nested values for applications. |\n| `notebooks/common/cli.py` | Parse standard `--environment` and optional `--config-dir` arguments for Spark entrypoints. |\n| `notebooks/workload/` | Exported Python Spark jobs, runnable with `spark-submit`. |\n| `dags/` | Thin DAG declarations, shared defaults/factory, and `.airflowignore` rules for helpers. |\n| `airflow_bundle_client.py` | Trusted operator CLI that changes only `lakehouse-dev.tracking_ref` to an allowed feature branch and invokes an externally configured apply/reload command. |\n| `Jenkinsfile` | Compile and unit-test CI only. |\n\n## Airflow bundle contract\n\nThe example deployment has three stable bundles: `lakehouse-dev` follows an operator-selected feature branch, `lakehouse-uat` tracks `uat`, and `lakehouse-prod` tracks `main`. Each checks out the same root paths `dags/`, `configs/`, and `notebooks/`; a run must use the DAG, config, helpers, and Spark application from its recorded bundle commit.\n\nBundle name selects runtime config and DAG ID prefix:\n\n| Bundle name | Config | DAG ID prefix |\n|---|---|---|\n| `lakehouse-main` or `lakehouse-prod` | `prod.yml` | `main-` |\n| `lakehouse-uat` | `uat.yml` | `uat-` |\n| Other names, including `lakehouse-dev` | `dev.yml` | `dev-` |\n\nThe current observed local Airflow instance used `lakehouse-main`. The config example uses `lakehouse-dev`, `lakehouse-uat`, and `lakehouse-prod`; deployers must keep bundle names and the mapping intentional.\n\nThe DAG factory validates the selected YAML, then submits the configured entrypoint through `DockerOperator` and `spark-submit`. The Docker daemon must see the same pinned bundle checkout path resolved by Airflow. `.airflowignore` prevents helper modules from being parsed as DAG declarations.\n\n## Security and operations\n\nGit credentials and runtime AWS/S3 credentials belong in Airflow connections or an approved secrets backend. Repository config, example bundle JSON, client settings, and DAGs contain no secret values. Feature branches execute with Airflow/Spark privileges, so branch selection is restricted to trusted operators and configured prefixes. UAT and production refs are not changed by the client.\n\nThe Spark image, master, Docker socket/network, Airflow provider versions, bundle refresh interval, Git connection, target paths/database names, and apply/reload command are deployment inputs. Integration validation must confirm DAG parsing, bundle-version consistency, Docker mount visibility, Nessie connectivity, and S3 access before environment use.\n"
+    },
+    {
+      "path": "aidlc-docs/knowledge/opensource-lakehouse/functional-design/workload-foundation.md",
+      "content": "# Workload Foundation Functional Design\n\n## Environment configuration\n\nKeep `dev.yml`, `uat.yml`, and `prod.yml` directly in `configs/`. The current workload requires `storage_path` and `database_name`; the loader rejects unsupported environments, missing or invalid files, malformed YAML, non-mapping roots, and invalid required values. It preserves arbitrary additional top-level and nested settings through a generic read-only mapping, and offers a mutable deep-copy conversion when needed. It does not fall back to another environment. Secrets and runtime credentials are external.\n\n`storage_path` is expected to end in `/`, and `database_name` is assumed to be a clean simple Spark identifier. These are the current workload assumptions; special identifier quoting/path normalization is outside the contract.\n\n## Spark initialization workload\n\n`notebooks/workload/init_environment.py` loads the selected config using the common CLI. It issues `CREATE NAMESPACE IF NOT EXISTS` for the configured database/catalog namespace and then writes two deterministic synthetic rows to `sample_spark_job_output` using overwrite mode. The output path is `storage_path + \"sample_spark_job_output\"`. Only this dedicated table/path may be overwritten. The job does not delete unrelated tables or objects.\n\nThe workload does not create an S3 directory marker through Hadoop S3A. The table write creates the object keys/prefix; this avoids requiring `S3AFileSystem` merely to initialize a path. Errors propagate to Airflow.\n\n## Airflow DAG behavior\n\nThe thin declaration `dags/init_environment.py` supplies the Python entrypoint and manual schedule. `dags/dag_factory.py` and `dag_defaults.py` select environment/config and DAG prefix from the bundle checkout identity, validate configuration, and construct the standard DAG and Docker Spark task. Helper files are excluded from discovery by `.airflowignore` but remain importable by the declaration.\n\n`lakehouse-main`/`lakehouse-prod` selects `prod.yml` and a `main-` DAG prefix; `lakehouse-uat` selects `uat.yml` and `uat-`; other names select `dev.yml` and `dev-`. The Docker task mounts the bundle checkout read-only and uses the same version as the DAG run. Airflow image, master, Docker endpoint/network, AWS region, and service credentials are deployment inputs.\n\n## Invariants and failure behavior\n\n- Environment selection is explicit from bundle identity; config loading never silently falls back.\n- Repeated namespace initialization is safe.\n- The only overwrite is the named synthetic smoke table at its dedicated child path.\n- Unrelated catalog/storage state remains unchanged.\n- Config, import, mount, catalog, or storage failures fail the Airflow task and remain visible in logs.\n- Integration against the live `.airflowignore` update and Spark/Nessie/S3 was not completed in this intent; see the archived Build and Test record.\n"
+    },
+    {
+      "path": "aidlc-docs/knowledge/opensource-lakehouse/functional-design/jenkins-deployment.md",
+      "content": "# Jenkins and Airflow Bundle Deployment Functional Design\n\n## Airflow Git Bundles\n\nOne Airflow 3 deployment is designed to use three Git DAG Bundles: `lakehouse-dev` tracks a selected feature branch, `lakehouse-uat` tracks `uat`, and `lakehouse-prod` tracks `main`. Each bundle checks out the repository root and uses the same `dags/`, `configs/`, and `notebooks/` paths. DAG runs retain bundle version identity so the DAG and Spark dependencies come from the same Git commit.\n\nThe stable bundle name selects environment config and DAG prefix: `lakehouse-main`/`lakehouse-prod` \u2192 `prod.yml` and `main-`; `lakehouse-uat` \u2192 `uat.yml` and `uat-`; other bundle names \u2192 `dev.yml` and `dev-`. The current local Airflow instance was observed using `lakehouse-main`, while the example three-bundle configuration uses `lakehouse-prod` for the `main` ref. This platform difference must be checked when applying deployment configuration.\n\n## Development branch client\n\n`airflow_bundle_client.py` reads a deployment-owned YAML settings file and an Airflow bundle JSON config. It validates Git ref syntax, rejects protected refs, enforces configured feature prefixes, changes only `lakehouse-dev.tracking_ref`, writes atomically, and invokes a trusted argument-vector apply/reload command. If apply fails, it restores the old config and reapplies it. A successful apply does not prove Airflow has fetched or parsed the branch.\n\nGit credentials remain in Airflow connections/secrets backends. The operator client is not a public DAG and is not automatically run by Jenkins. Selected branch code runs with Airflow/Spark privileges, so branch selection is limited to trusted operators.\n\n## Jenkins responsibility\n\nThe Jenkinsfile compiles the Python client, DAGs, and workloads, then runs pytest. Jenkins is a CI gate only; it does not copy/upload files, mutate bundle refs, or manage Airflow Git credentials. Airflow polls configured refs, parses bundle commits, and records the version used by each DAG run.\n\n## Deployment prerequisites and unverified behavior\n\nThe Airflow deployment owner must supply the Git URL/connection, provider-compatible Airflow 3 version, bundle config and refresh interval, supported apply/reload command, Docker daemon mapping, Spark image/master/network, catalog target, S3 authorization, and operator permissions. Live validation of the `.airflowignore` fix and selected bundle-version path is pending. See the archived Deploy handoff for the exact accepted limitations and ordered validation steps.\n"
+    }
+  ],
+  "artifacts": [
+    "aidlc-docs/current/inception",
+    "aidlc-docs/current/construction",
+    "aidlc-docs/current/deploy",
+    "aidlc-docs/current/compaction/20261020-lakehouse-workload-foundation/manifest.json",
+    "README.md",
+    "AGENTS.md",
+    "AIRFLOW_BUNDLES.md",
+    "Jenkinsfile",
+    "airflow_bundle_client.py",
+    "airflow_bundle_client.example.yml",
+    "airflow_bundle_config.example.json",
+    "configs",
+    "dags",
+    "notebooks",
+    "scripts",
+    "tests",
+    "requirements-dev.txt",
+    "pyproject.toml"
+  ],
+  "cleanup_paths": [
+    "aidlc-docs/current/inception",
+    "aidlc-docs/current/construction",
+    "aidlc-docs/current/deploy",
+    "aidlc-docs/current/compaction/20261020-lakehouse-workload-foundation"
+  ]
+}

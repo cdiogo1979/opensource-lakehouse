@@ -1,0 +1,47 @@
+[
+  {
+    "name": "lakehouse-dev",
+    "classpath": "airflow.providers.git.bundles.git.GitDagBundle",
+    "kwargs": {
+      "repo_url": "https://git.example.com/org/opensource-lakehouse.git",
+      "git_conn_id": "lakehouse_git",
+      "tracking_ref": "feature/example-change",
+      "refresh_interval": 300,
+      "sparse_dirs": [
+        "dags",
+        "configs",
+        "notebooks"
+      ]
+    }
+  },
+  {
+    "name": "lakehouse-uat",
+    "classpath": "airflow.providers.git.bundles.git.GitDagBundle",
+    "kwargs": {
+      "repo_url": "https://git.example.com/org/opensource-lakehouse.git",
+      "git_conn_id": "lakehouse_git",
+      "tracking_ref": "uat",
+      "refresh_interval": 300,
+      "sparse_dirs": [
+        "dags",
+        "configs",
+        "notebooks"
+      ]
+    }
+  },
+  {
+    "name": "lakehouse-prod",
+    "classpath": "airflow.providers.git.bundles.git.GitDagBundle",
+    "kwargs": {
+      "repo_url": "https://git.example.com/org/opensource-lakehouse.git",
+      "git_conn_id": "lakehouse_git",
+      "tracking_ref": "main",
+      "refresh_interval": 300,
+      "sparse_dirs": [
+        "dags",
+        "configs",
+        "notebooks"
+      ]
+    }
+  }
+]

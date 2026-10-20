@@ -1,0 +1,5 @@
+# Development and configuration-loader test dependencies; runtime platform
+# dependencies for Airflow and Spark are managed externally.
+PyYAML
+hypothesis
+pytest
