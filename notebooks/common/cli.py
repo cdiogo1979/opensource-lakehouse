@@ -3,7 +3,7 @@
 import argparse
 from typing import Any
 
-from config_loader import SUPPORTED_ENVIRONMENTS
+from .config_loader import SUPPORTED_ENVIRONMENTS
 
 
 def parse_args(argv: Any = None) -> argparse.Namespace:
