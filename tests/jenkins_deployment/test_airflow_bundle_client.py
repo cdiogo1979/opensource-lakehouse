@@ -188,6 +188,7 @@ def test_dag_factory_reuses_spark_container_for_bundle_workloads() -> None:
     factory = factory_path.read_text(encoding="utf-8")
 
     assert dag_path.is_file()
+    assert 'dag_name="init_environment"' in source
     assert '"initialize_environment_first", "init_environment.py"' in source
     assert '"initialize_environment_second", "init_environment.py"' in source
     assert "schedule=None" in source

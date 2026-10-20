@@ -181,10 +181,15 @@ def _stop_spark_container(docker_url: str, **context: object) -> None:
         client.close()
 
 
-def create_spark_dag(workloads: Sequence[tuple[str, str]], schedule: str | None) -> DAG:
+def create_spark_dag(
+    dag_name: str,
+    workloads: Sequence[tuple[str, str]],
+    schedule: str | None,
+) -> DAG:
     """Create a standard config-validation and reusable Spark-container DAG.
 
     Args:
+        dag_name: Name used in the Airflow DAG ID and description.
         workloads: Ordered ``(task_name, entrypoint_file)`` pairs. Entrypoint
             files may repeat; each named workload is submitted sequentially to
             the same Spark container.
@@ -200,6 +205,8 @@ def create_spark_dag(workloads: Sequence[tuple[str, str]], schedule: str | None)
     """
     if not workloads:
         raise ValueError("At least one Spark workload entrypoint is required.")
+    if not re.fullmatch(r"[a-zA-Z0-9_.-]+", dag_name):
+        raise ValueError(f"Invalid DAG name: {dag_name!r}")
     task_names = [task_name for task_name, _ in workloads]
     if len(set(task_names)) != len(task_names):
         raise ValueError("Spark workload task names must be unique.")
@@ -215,7 +222,6 @@ def create_spark_dag(workloads: Sequence[tuple[str, str]], schedule: str | None)
 
     dag_id_prefix, environment = identity_for_bundle(DAGS_DIR)
     workload_names = [task_name for task_name, _ in workloads]
-    workload_group_name = "-".join(workload_names)
     config_path = CONFIG_DIR / f"{environment}.yml"
     container_config_path = str(CONTAINER_BUNDLE_ROOT / config_path.relative_to(BUNDLE_ROOT))
     spark_job_image = os.environ.get("LAKEHOUSE_SPARK_IMAGE", "airflow-spark-job:3.5.5_1.8.1")
@@ -227,9 +233,9 @@ def create_spark_dag(workloads: Sequence[tuple[str, str]], schedule: str | None)
     dag = DAG(
         **standard_dag_kwargs(
             environment=environment,
-            workload_name=workload_group_name,
+            workload_name=dag_name,
             description=(
-                f"Run {', '.join(workload_names)} sequentially in one Spark container "
+                f"Run {dag_name} using {', '.join(workload_names)} sequentially in one Spark container "
                 f"for the {environment} bundle environment."
             ),
             schedule=schedule,
