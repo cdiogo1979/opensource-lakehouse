@@ -22,6 +22,8 @@ DAGS_DIR = Path(__file__).resolve().parent
 BUNDLE_ROOT = DAGS_DIR.parent
 CONFIG_DIR = BUNDLE_ROOT / "configs"
 CONTAINER_BUNDLE_ROOT = Path("/opt/lakehouse-bundle")
+CONTAINER_WRITER_KEYTAB = "/run/credentials/write-service-account.keytab"
+DEFAULT_WRITER_PRINCIPAL = "write-service-account@LAKEHOUSE.LOCAL"
 LOGGER = logging.getLogger(__name__)
 
 
@@ -317,10 +319,15 @@ def _submit_spark_job(
         container_name = _container_name(context["dag"].dag_id, str(context["run_id"]))
 
     container_entrypoint = CONTAINER_BUNDLE_ROOT / "notebooks" / "workload" / entrypoint_file
+    writer_principal = os.environ.get("SPARK_WRITER_PRINCIPAL", DEFAULT_WRITER_PRINCIPAL)
     command = [
         "/opt/spark/bin/spark-submit",
         "--master",
         spark_master,
+        "--principal",
+        writer_principal,
+        "--keytab",
+        CONTAINER_WRITER_KEYTAB,
         "--files",
         config_path,
         str(container_entrypoint),
