@@ -180,6 +180,29 @@ def _docker_host_bundle_path(bundle_source: str) -> str:
     return str(host_root / relative_bundle)
 
 
+def _docker_host_project_path(relative_path: str) -> str:
+    """Resolve a project-relative path as seen by the Docker daemon.
+
+    Args:
+        relative_path: Path relative to ``LAKEHOUSE_PROJECT_ROOT``.
+
+    Returns:
+        Absolute path visible to the Docker daemon.
+
+    Raises:
+        AirflowException: If the project root is missing or the requested
+            path is absolute or escapes that root.
+    """
+    project_root_value = os.environ.get("LAKEHOUSE_PROJECT_ROOT")
+    if not project_root_value or not Path(project_root_value).is_absolute():
+        raise AirflowException("LAKEHOUSE_PROJECT_ROOT must be configured as an absolute path.")
+
+    path = Path(relative_path)
+    if path.is_absolute() or ".." in path.parts:
+        raise AirflowException("Spark runtime mount paths must remain inside LAKEHOUSE_PROJECT_ROOT.")
+    return str(Path(project_root_value) / path)
+
+
 def _create_spark_container(
     image: str,
     network: str | None,
@@ -208,6 +231,24 @@ def _create_spark_container(
     dag_id = context["dag"].dag_id
     container_name = _container_name(dag_id, str(context["run_id"]))
     docker_bundle_source = _docker_host_bundle_path(bundle_source)
+    project_mounts = {
+        "infra/spark/entrypoint.sh": "/infra/spark/entrypoint.sh",
+        "infra/spark/spark-defaults.conf": "/opt/spark/conf/spark-defaults.conf",
+        "infra/kerberos/krb5.conf": "/etc/krb5.conf",
+        ".runtime/credentials/keytabs/write-service-account.keytab": "/run/credentials/write-service-account.keytab",
+        ".runtime/credentials/rustfs-writer-access-key": "/run/secrets/rustfs-writer-access-key",
+        ".runtime/credentials/rustfs-writer-secret-key": "/run/secrets/rustfs-writer-secret-key",
+    }
+    volumes = {docker_bundle_source: {"bind": bundle_target, "mode": "ro"}}
+    volumes.update(
+        {
+            _docker_host_project_path(source): {"bind": target, "mode": "ro"}
+            for source, target in project_mounts.items()
+        }
+    )
+    writer_principal = os.environ.get(
+        "SPARK_WRITER_PRINCIPAL", "write-service-account@LAKEHOUSE.LOCAL"
+    )
     client = docker.DockerClient(base_url=docker_url)
     try:
         try:
@@ -217,17 +258,31 @@ def _create_spark_container(
 
         container = client.containers.run(
             image=image,
-            command=["/bin/sh", "-c", "while true; do sleep 3600; done"],
+            command=["driver"],
             name=container_name,
             network=network,
             detach=True,
+            entrypoint=["/bin/bash", "/infra/spark/entrypoint.sh"],
             environment={
                 "AWS_REGION": aws_region,
                 "AWS_DEFAULT_REGION": aws_region,
+                "AWS_PROFILE": "default",
+                "AWS_EC2_METADATA_DISABLED": "true",
+                "AWS_SHARED_CREDENTIALS_FILE": "/run/krb5/aws-credentials",
+                "KRB5_CONFIG": "/etc/krb5.conf",
+                "KRB5CCNAME": "FILE:/run/krb5/ccache",
+                "SPARK_RUNTIME_DIR": "/run/krb5",
+                "SPARK_CONTAINER_ROLE": "driver",
+                "SPARK_MASTER_HOST": "spark",
+                "SPARK_WRITER_KEYTAB": "/run/credentials/write-service-account.keytab",
+                "SPARK_WRITER_PRINCIPAL": writer_principal,
+                "RUSTFS_WRITER_ACCESS_KEY_FILE": "/run/secrets/rustfs-writer-access-key",
+                "RUSTFS_WRITER_SECRET_KEY_FILE": "/run/secrets/rustfs-writer-secret-key",
                 "LAKEHOUSE_ENVIRONMENT": environment,
                 "PYTHONPATH": bundle_target,
             },
-            volumes={docker_bundle_source: {"bind": bundle_target, "mode": "ro"}},
+            tmpfs={"/run/krb5": "rw,noexec,nosuid,size=16m,mode=0700"},
+            volumes=volumes,
         )
         LOGGER.info("Started reusable Spark container %s for DAG run %s", container_name, context["run_id"])
         return container.name
