@@ -1,4 +1,4 @@
-# Local RustFS bucket and Nessie namespace used by the development Compose stack.
-storage_path: "s3a://lake/opensource-lakehouse/dev/default_lhdev"
+# RustFS object prefix and Hive catalog namespace for development.
+storage_path: "s3a://lake/opensource-lakehouse/dev/default_lhdev/"
 database_name: "default_lhdev"
 
