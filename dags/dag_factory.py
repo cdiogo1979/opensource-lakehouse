@@ -142,6 +142,44 @@ def _container_name(dag_id: str, run_id: str) -> str:
     return f"lakehouse-{safe_dag_id[:40]}-{run_suffix}"
 
 
+def _docker_host_bundle_path(bundle_source: str) -> str:
+    """Translate an Airflow-container bundle path to its Docker-host path.
+
+    Args:
+        bundle_source: Versioned bundle root as seen inside the Airflow
+            scheduler container.
+
+    Returns:
+        The same bundle revision under the host-mounted bundle root.
+
+    Raises:
+        AirflowException: If the bundle path is outside the configured
+            container root or either root is missing or invalid.
+    """
+    host_root_value = os.environ.get("LAKEHOUSE_BUNDLE_HOST_ROOT")
+    container_root_value = os.environ.get("LAKEHOUSE_BUNDLE_CONTAINER_ROOT")
+    if not host_root_value or not container_root_value:
+        raise AirflowException(
+            "LAKEHOUSE_BUNDLE_HOST_ROOT and LAKEHOUSE_BUNDLE_CONTAINER_ROOT must be configured."
+        )
+
+    host_root = Path(host_root_value)
+    container_root = Path(container_root_value)
+    if not host_root.is_absolute() or not container_root.is_absolute():
+        raise AirflowException("Airflow bundle host and container roots must be absolute paths.")
+
+    resolved_bundle = Path(bundle_source).resolve()
+    resolved_container_root = container_root.resolve()
+    try:
+        relative_bundle = resolved_bundle.relative_to(resolved_container_root)
+    except ValueError as error:
+        raise AirflowException(
+            "The versioned DAG bundle path is outside LAKEHOUSE_BUNDLE_CONTAINER_ROOT."
+        ) from error
+
+    return str(host_root / relative_bundle)
+
+
 def _create_spark_container(
     image: str,
     network: str | None,
@@ -169,6 +207,7 @@ def _create_spark_container(
     """
     dag_id = context["dag"].dag_id
     container_name = _container_name(dag_id, str(context["run_id"]))
+    docker_bundle_source = _docker_host_bundle_path(bundle_source)
     client = docker.DockerClient(base_url=docker_url)
     try:
         try:
@@ -188,7 +227,7 @@ def _create_spark_container(
                 "LAKEHOUSE_ENVIRONMENT": environment,
                 "PYTHONPATH": bundle_target,
             },
-            volumes={bundle_source: {"bind": bundle_target, "mode": "ro"}},
+            volumes={docker_bundle_source: {"bind": bundle_target, "mode": "ro"}},
         )
         LOGGER.info("Started reusable Spark container %s for DAG run %s", container_name, context["run_id"])
         return container.name
