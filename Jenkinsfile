@@ -2,15 +2,24 @@ pipeline {
     agent any
 
     stages {
+        stage('Install test dependencies') {
+            steps {
+                sh '''
+                    python3 -m venv .venv
+                    .venv/bin/python -m pip install --disable-pip-version-check -r requirements-dev.txt
+                '''
+            }
+        }
+
         stage('Validate') {
             steps {
-                sh 'python3 -m compileall -q airflow_bundle_client.py dags notebooks'
+                sh '.venv/bin/python -m compileall -q airflow_bundle_client.py dags notebooks'
             }
         }
 
         stage('Unit tests') {
             steps {
-                sh 'python3 -m pytest -q'
+                sh '.venv/bin/python -m pytest -q'
             }
         }
     }
