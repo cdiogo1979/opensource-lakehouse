@@ -173,8 +173,14 @@ class _FakeDataFrameWriter:
         """Store the fake session and immutable rows for a pending write."""
         self.spark = spark
         self.rows = list(rows)
+        self.source_format = None
         self.write_mode = None
         self.options = {}
+
+    def format(self, source_format):
+        """Capture the provider selected by the workload."""
+        self.source_format = source_format
+        return self
 
     def mode(self, write_mode):
         """Set the fake write mode and return this writer for chaining."""

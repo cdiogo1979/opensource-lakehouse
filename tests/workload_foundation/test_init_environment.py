@@ -18,9 +18,14 @@ class _FakeDataFrameWriter:
     """Capture the table write contract without starting Spark."""
 
     def __init__(self):
+        self.source_format = None
         self.write_mode = None
         self.options = {}
         self.table_name = None
+
+    def format(self, source_format):
+        self.source_format = source_format
+        return self
 
     def mode(self, write_mode):
         self.write_mode = write_mode
@@ -167,6 +172,7 @@ def test_smoke_write_is_limited_to_dedicated_table_and_child_path():
     write_sample_dataset(spark, config)
 
     assert SAMPLE_TABLE_NAME == "sample_spark_job_output"
+    assert spark.writer.source_format == "iceberg"
     assert spark.writer.write_mode == "overwrite"
     assert spark.writer.options == {"path": "s3a://bucket-dev/root/sample_spark_job_output"}
     assert spark.writer.table_name == "dev_db.sample_spark_job_output"
