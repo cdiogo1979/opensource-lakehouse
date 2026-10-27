@@ -282,6 +282,6 @@ def test_repeating_initialization_is_idempotent_and_preserves_unrelated_state(ex
     assert once.namespaces == twice.namespaces
     assert "uat_sample_db" in once.namespaces
     assert once.paths == twice.paths
-    assert once.tables["uat_sample_db.sample_spark_job_output"]["path"] == "s3a://bucket-uat/sample/sample_spark_job_output"
+    assert once.tables["uat_sample_db.sample_spark_job_output"]["path"] == "s3a://bucket-uat/sample/uat_sample_db/sample_spark_job_output"
     assert once.tables == twice.tables
     assert once.paths["s3a://bucket-uat/unrelated/"] == "preserve-me"

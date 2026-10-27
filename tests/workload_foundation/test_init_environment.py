@@ -174,7 +174,7 @@ def test_smoke_write_is_limited_to_dedicated_table_and_child_path():
     assert SAMPLE_TABLE_NAME == "sample_spark_job_output"
     assert spark.writer.source_format == "iceberg"
     assert spark.writer.write_mode == "overwrite"
-    assert spark.writer.options == {"path": "s3a://bucket-dev/root/sample_spark_job_output"}
+    assert spark.writer.options == {"path": "s3a://bucket-dev/root/dev_db/sample_spark_job_output"}
     assert spark.writer.table_name == "dev_db.sample_spark_job_output"
 
 
@@ -190,4 +190,4 @@ def test_initialization_creates_namespace_then_writes_smoke_table():
 
     assert spark.statements == ["CREATE NAMESPACE IF NOT EXISTS dev_db"]
     assert spark.writer.table_name == "dev_db.sample_spark_job_output"
-    assert spark.writer.options["path"] == ("s3a://bucket-dev/root/sample_spark_job_output")
+    assert spark.writer.options["path"] == "s3a://bucket-dev/root/dev_db/sample_spark_job_output"
