@@ -31,9 +31,7 @@ def _login_spark_writer(spark: Any) -> None:
     if not principal and not keytab:
         return
     if not principal or not keytab:
-        raise RuntimeError(
-            "SPARK_WRITER_PRINCIPAL and SPARK_WRITER_KEYTAB must be configured together."
-        )
+        raise RuntimeError("SPARK_WRITER_PRINCIPAL and SPARK_WRITER_KEYTAB must be configured together.")
     if not os.path.isfile(keytab):
         raise FileNotFoundError("Configured Spark writer keytab is unavailable.")
 

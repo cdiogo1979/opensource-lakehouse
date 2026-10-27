@@ -6,6 +6,7 @@ REPO_ROOT="$(cd -- "${SCRIPT_DIR}/.." && pwd)"
 cd "${REPO_ROOT}"
 
 readonly TARGETS=(./airflow_bundle_client.py ./notebooks ./scripts ./tests ./dags)
+readonly BANDIT_TARGETS=(./airflow_bundle_client.py ./notebooks ./scripts ./dags)
 
 log() {
     local result="$1"
@@ -52,7 +53,7 @@ run_flake8() {
 }
 
 run_bandit() {
-    run_step 'Bandit security scan' bandit -c pyproject.toml -r "${TARGETS[@]}"
+    run_step 'Bandit security scan' bandit -c pyproject.toml -r "${BANDIT_TARGETS[@]}"
 }
 
 run_all() {

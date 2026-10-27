@@ -5,14 +5,13 @@ from __future__ import annotations
 import argparse
 import json
 import os
-import subprocess
+import subprocess  # nosec B404 - calls below use argument lists with shell=False.
 import sys
 import tempfile
 from pathlib import Path
 from typing import Any, Sequence
 
 import yaml
-
 
 PROTECTED_REFS = frozenset({"dev", "uat", "main"})
 DEV_BUNDLE_NAME = "lakehouse-dev"
@@ -57,12 +56,8 @@ def load_client_settings(settings_path: Path) -> dict[str, Any]:
     settings["dev_bundle_name"] = DEV_BUNDLE_NAME
 
     prefixes = settings.get("allowed_branch_prefixes", [])
-    if not isinstance(prefixes, list) or not prefixes or any(
-        not isinstance(prefix, str) or not prefix for prefix in prefixes
-    ):
-        raise BundleClientError(
-            "allowed_branch_prefixes must contain at least one non-empty feature-branch prefix"
-        )
+    if not isinstance(prefixes, list) or not prefixes or any(not isinstance(prefix, str) or not prefix for prefix in prefixes):
+        raise BundleClientError("allowed_branch_prefixes must contain at least one non-empty feature-branch prefix")
     settings["allowed_branch_prefixes"] = prefixes
 
     apply_timeout = settings.get("apply_timeout_seconds", 300)
@@ -71,14 +66,10 @@ def load_client_settings(settings_path: Path) -> dict[str, Any]:
     settings["apply_timeout_seconds"] = apply_timeout
 
     apply_command = settings.get("apply_command")
-    if not isinstance(apply_command, list) or not apply_command or any(
-        not isinstance(part, str) or not part for part in apply_command
-    ):
+    if not isinstance(apply_command, list) or not apply_command or any(not isinstance(part, str) or not part for part in apply_command):
         raise BundleClientError("apply_command must be a non-empty list of command arguments")
     if not any(APPLY_CONFIG_PLACEHOLDER in part for part in apply_command):
-        raise BundleClientError(
-            f"apply_command must include {APPLY_CONFIG_PLACEHOLDER}"
-        )
+        raise BundleClientError(f"apply_command must include {APPLY_CONFIG_PLACEHOLDER}")
     settings["apply_command"] = apply_command
     return settings
 
@@ -155,13 +146,11 @@ def validate_feature_ref(
         raise BundleClientError("tracking ref must be a non-empty branch name")
     if tracking_ref in PROTECTED_REFS:
         raise BundleClientError("dev bundle cannot track a protected ref")
-    if allowed_prefixes and not any(
-        tracking_ref.startswith(prefix) for prefix in allowed_prefixes
-    ):
+    if allowed_prefixes and not any(tracking_ref.startswith(prefix) for prefix in allowed_prefixes):
         raise BundleClientError("tracking ref does not match the configured branch prefix")
     try:
-        result = subprocess.run(
-            ["git", "check-ref-format", f"refs/heads/{tracking_ref}"],
+        result = subprocess.run(  # nosec B603 - fixed git argv, shell disabled; ref is Git-validated below.
+            ["git", "check-ref-format", f"refs/heads/{tracking_ref}"],  # nosec B607 - Git is resolved by PATH in the managed CI/runtime image.
             check=False,
             capture_output=True,
             text=True,
@@ -178,9 +167,7 @@ def _atomic_write(config_path: Path, content: bytes) -> None:
     temporary_path: Path | None = None
     try:
         file_mode = config_path.stat().st_mode & 0o777
-        with tempfile.NamedTemporaryFile(
-            mode="wb", dir=config_path.parent, prefix=f".{config_path.name}.", delete=False
-        ) as temporary_file:
+        with tempfile.NamedTemporaryFile(mode="wb", dir=config_path.parent, prefix=f".{config_path.name}.", delete=False) as temporary_file:
             temporary_path = Path(temporary_file.name)
             temporary_file.write(content)
             temporary_file.flush()
@@ -222,20 +209,14 @@ def select_dev_ref(settings: dict[str, Any], tracking_ref: str) -> tuple[str, st
     uat_before = json.dumps(next(b for b in bundles if b["name"] == "lakehouse-uat"))
     prod_before = json.dumps(next(b for b in bundles if b["name"] == "lakehouse-prod"))
     dev_bundle["kwargs"]["tracking_ref"] = tracking_ref
-    if (
-        json.dumps(next(b for b in bundles if b["name"] == "lakehouse-uat")) != uat_before
-        or json.dumps(next(b for b in bundles if b["name"] == "lakehouse-prod")) != prod_before
-    ):
+    if json.dumps(next(b for b in bundles if b["name"] == "lakehouse-uat")) != uat_before or json.dumps(next(b for b in bundles if b["name"] == "lakehouse-prod")) != prod_before:
         raise BundleClientError("Refusing update because UAT or production config changed")
 
     updated_bytes = (json.dumps(bundles, indent=2) + "\n").encode("utf-8")
-    command = [
-        argument.replace(APPLY_CONFIG_PLACEHOLDER, str(config_path))
-        for argument in settings["apply_command"]
-    ]
+    command = [argument.replace(APPLY_CONFIG_PLACEHOLDER, str(config_path)) for argument in settings["apply_command"]]
     _atomic_write(config_path, updated_bytes)
     try:
-        subprocess.run(
+        subprocess.run(  # nosec B603 - trusted operator argv list; shell is disabled.
             command,
             check=True,
             shell=False,
@@ -246,7 +227,7 @@ def select_dev_ref(settings: dict[str, Any], tracking_ref: str) -> tuple[str, st
     except (OSError, subprocess.CalledProcessError, subprocess.TimeoutExpired) as error:
         try:
             _atomic_write(config_path, original_bytes)
-            subprocess.run(
+            subprocess.run(  # nosec B603 - same trusted argv list reapplies the restored config; shell is disabled.
                 command,
                 check=True,
                 shell=False,
@@ -255,20 +236,14 @@ def select_dev_ref(settings: dict[str, Any], tracking_ref: str) -> tuple[str, st
                 timeout=settings["apply_timeout_seconds"],
             )
         except (BundleClientError, OSError, subprocess.CalledProcessError, subprocess.TimeoutExpired) as rollback_error:
-            raise BundleClientError(
-                "Apply failed and restoring the previous bundle config could not be fully applied"
-            ) from rollback_error
-        raise BundleClientError(
-            f"Applying the selected branch failed; restored {previous_ref!r}"
-        ) from error
+            raise BundleClientError("Apply failed and restoring the previous bundle config could not be fully applied") from rollback_error
+        raise BundleClientError(f"Applying the selected branch failed; restored {previous_ref!r}") from error
     return previous_ref, tracking_ref
 
 
 def build_parser() -> argparse.ArgumentParser:
     """Create the command line parser for the bundle client."""
-    parser = argparse.ArgumentParser(
-        description="Select the feature branch tracked by Airflow's dev bundle."
-    )
+    parser = argparse.ArgumentParser(description="Select the feature branch tracked by Airflow's dev bundle.")
     parser.add_argument(
         "--settings",
         type=Path,
@@ -295,11 +270,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         if previous_ref == selected_ref:
             print(f"lakehouse-dev already tracks {selected_ref!r}; no apply was needed")
         else:
-            print(
-                f"Updated lakehouse-dev tracking_ref from {previous_ref!r} to "
-                f"{selected_ref!r}; deployment apply succeeded. Airflow fetch/parse "
-                "readiness must be confirmed in Airflow."
-            )
+            print(f"Updated lakehouse-dev tracking_ref from {previous_ref!r} to " f"{selected_ref!r}; deployment apply succeeded. Airflow fetch/parse " "readiness must be confirmed in Airflow.")
         return 0
     except BundleClientError as error:
         print(f"Branch selection failed: {error}", file=sys.stderr)

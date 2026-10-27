@@ -109,10 +109,7 @@ def _normalize_workloads(workloads: Sequence[Mapping[str, Any]]) -> tuple[SparkW
     for workload in normalized:
         unknown_dependencies = set(workload.runs_after) - task_names
         if unknown_dependencies:
-            raise ValueError(
-                f"Workload {workload.task_name!r} runs after unknown tasks: "
-                f"{', '.join(sorted(unknown_dependencies))}."
-            )
+            raise ValueError(f"Workload {workload.task_name!r} runs after unknown tasks: " f"{', '.join(sorted(unknown_dependencies))}.")
         if workload.task_name in workload.runs_after:
             raise ValueError(f"Workload {workload.task_name!r} cannot run after itself.")
 
@@ -161,9 +158,7 @@ def _docker_host_bundle_path(bundle_source: str) -> str:
     host_root_value = os.environ.get("LAKEHOUSE_BUNDLE_HOST_ROOT")
     container_root_value = os.environ.get("LAKEHOUSE_BUNDLE_CONTAINER_ROOT")
     if not host_root_value or not container_root_value:
-        raise AirflowException(
-            "LAKEHOUSE_BUNDLE_HOST_ROOT and LAKEHOUSE_BUNDLE_CONTAINER_ROOT must be configured."
-        )
+        raise AirflowException("LAKEHOUSE_BUNDLE_HOST_ROOT and LAKEHOUSE_BUNDLE_CONTAINER_ROOT must be configured.")
 
     host_root = Path(host_root_value)
     container_root = Path(container_root_value)
@@ -175,9 +170,7 @@ def _docker_host_bundle_path(bundle_source: str) -> str:
     try:
         relative_bundle = resolved_bundle.relative_to(resolved_container_root)
     except ValueError as error:
-        raise AirflowException(
-            "The versioned DAG bundle path is outside LAKEHOUSE_BUNDLE_CONTAINER_ROOT."
-        ) from error
+        raise AirflowException("The versioned DAG bundle path is outside LAKEHOUSE_BUNDLE_CONTAINER_ROOT.") from error
 
     return str(host_root / relative_bundle)
 
@@ -242,15 +235,8 @@ def _create_spark_container(
         ".runtime/credentials/rustfs-writer-secret-key": "/run/secrets/rustfs-writer-secret-key",
     }
     volumes = {docker_bundle_source: {"bind": bundle_target, "mode": "ro"}}
-    volumes.update(
-        {
-            _docker_host_project_path(source): {"bind": target, "mode": "ro"}
-            for source, target in project_mounts.items()
-        }
-    )
-    writer_principal = os.environ.get(
-        "SPARK_WRITER_PRINCIPAL", "write-service-account@LAKEHOUSE.LOCAL"
-    )
+    volumes.update({_docker_host_project_path(source): {"bind": target, "mode": "ro"} for source, target in project_mounts.items()})
+    writer_principal = os.environ.get("SPARK_WRITER_PRINCIPAL", "write-service-account@LAKEHOUSE.LOCAL")
     client = docker.DockerClient(base_url=docker_url)
     try:
         try:
@@ -279,7 +265,7 @@ def _create_spark_container(
                 "SPARK_WRITER_KEYTAB": "/run/credentials/write-service-account.keytab",
                 "SPARK_WRITER_PRINCIPAL": writer_principal,
                 "RUSTFS_WRITER_ACCESS_KEY_FILE": "/run/secrets/rustfs-writer-access-key",
-                "RUSTFS_WRITER_SECRET_KEY_FILE": "/run/secrets/rustfs-writer-secret-key",
+                "RUSTFS_WRITER_SECRET_KEY_FILE": "/run/secrets/rustfs-writer-secret-key",  # nosec B105 - path to a mounted secret file, not a credential value.
                 "LAKEHOUSE_ENVIRONMENT": environment,
                 "PYTHONPATH": bundle_target,
             },
@@ -344,9 +330,7 @@ def _submit_spark_job(
         output = result.output or b""
         LOGGER.info("Spark output for %s:\n%s", entrypoint_file, output.decode(errors="replace"))
         if result.exit_code != 0:
-            raise AirflowException(
-                f"spark-submit for {entrypoint_file} exited with status {result.exit_code}."
-            )
+            raise AirflowException(f"spark-submit for {entrypoint_file} exited with status {result.exit_code}.")
     finally:
         client.close()
 
@@ -412,10 +396,7 @@ def create_spark_dag(
         **standard_dag_kwargs(
             environment=environment,
             workload_name=dag_name,
-            description=(
-                f"Run {dag_name} using {', '.join(workload_names)} in one Spark container "
-                f"for the {environment} bundle environment."
-            ),
+            description=(f"Run {dag_name} using {', '.join(workload_names)} in one Spark container " f"for the {environment} bundle environment."),
             schedule=schedule,
             tags=("spark",),
             dag_id_prefix=dag_id_prefix,
