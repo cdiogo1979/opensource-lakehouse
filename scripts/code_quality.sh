@@ -5,7 +5,7 @@ SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd -- "${SCRIPT_DIR}/.." && pwd)"
 cd "${REPO_ROOT}"
 
-readonly TARGETS=(./notebooks ./scripts ./src ./tests ./dags)  
+readonly TARGETS=(./airflow_bundle_client.py ./notebooks ./scripts ./tests ./dags)
 
 log() {
     local result="$1"
