@@ -32,6 +32,21 @@ class _FakeDataFrameWriter:
 
     def saveAsTable(self, table_name):
         self.table_name = table_name
+        self.spark.tables.add(table_name)
+
+
+class _FakeCatalog:
+    """Model the catalog existence checks used by the workload."""
+
+    def __init__(self, namespaces, tables):
+        self.namespaces = namespaces
+        self.tables = tables
+
+    def databaseExists(self, database_name):
+        return database_name in self.namespaces
+
+    def tableExists(self, table_identifier):
+        return table_identifier in self.tables
 
 
 class _FakeSpark:
@@ -39,7 +54,11 @@ class _FakeSpark:
 
     def __init__(self):
         self.statements = []
+        self.namespaces = set()
+        self.tables = set()
+        self.catalog = _FakeCatalog(self.namespaces, self.tables)
         self.writer = _FakeDataFrameWriter()
+        self.writer.spark = self
 
     def sql(self, statement):
         self.statements.append(statement)

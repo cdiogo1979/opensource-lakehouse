@@ -7,7 +7,6 @@ extend-exclude = '''
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-norecursedirs = ["aidlc-docs"]
 
 [tool.ruff]
 line-length = 200

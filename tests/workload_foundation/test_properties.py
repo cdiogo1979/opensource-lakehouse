@@ -224,6 +224,15 @@ class _FakeSparkSession:
         self.namespaces = {"existing_namespace"}
         self.paths = {"s3a://bucket-uat/unrelated/": "preserve-me"}
         self.operations = []
+        self.catalog = self
+
+    def databaseExists(self, database_name):
+        """Report whether the in-memory catalog contains a namespace."""
+        return database_name in self.namespaces
+
+    def tableExists(self, table_identifier):
+        """Report whether the in-memory catalog contains a table."""
+        return table_identifier in self.tables
 
     def sql(self, statement):
         """Model the idempotent namespace creation statement."""
