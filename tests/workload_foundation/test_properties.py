@@ -209,6 +209,11 @@ class _FakeDataFrame:
         """Create a fake DataFrame backed by the provided Spark model."""
         self.write = _FakeDataFrameWriter(spark, rows)
 
+    def withColumn(self, name, expression):
+        """Accept the timestamp column transformation used by the workload."""
+        del name, expression
+        return self
+
 
 class _FakeSparkSession:
     """In-memory catalog and table model for the job contract."""

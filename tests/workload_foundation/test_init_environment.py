@@ -66,7 +66,14 @@ class _FakeSpark:
     def createDataFrame(self, rows, schema):
         assert rows == SAMPLE_ROWS
         assert schema == SAMPLE_SCHEMA
-        return type("FakeDataFrame", (), {"write": self.writer})()
+        return type(
+            "FakeDataFrame",
+            (),
+            {
+                "write": self.writer,
+                "withColumn": lambda dataframe, name, expression: dataframe,
+            },
+        )()
 
 
 def test_config_loader_exposes_arbitrary_nested_settings(tmp_path):
