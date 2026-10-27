@@ -86,7 +86,7 @@ def write_sample_dataset(spark: Any, config: Mapping[str, Any]) -> None:
         spark: Active SparkSession-compatible object.
         config: Validated settings for the explicitly selected environment.
     """
-    output_path = f"{config['storage_path']}/{SAMPLE_TABLE_NAME}"
+    output_path = f"{config['storage_path']}/{config['database_name']}/{SAMPLE_TABLE_NAME}"
     table_identifier = f"{config['database_name']}.{SAMPLE_TABLE_NAME}"
     if spark.catalog.tableExists(table_identifier):
         logger.info(

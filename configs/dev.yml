@@ -1,4 +1,4 @@
 # RustFS object prefix and Hive catalog namespace for development.
-storage_path: "s3a://lake/opensource-lakehouse/dev/default_lhdev/"
+storage_path: "s3a://lake/opensource-lakehouse/dev/"
 database_name: "default_lhdev"
 
