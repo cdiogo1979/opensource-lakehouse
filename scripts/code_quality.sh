@@ -18,7 +18,7 @@ usage() {
 Usage: scripts/code_quality.sh <mode>
 
 Modes:
-  lint    Run Ruff checks and format Python files with Black.
+  lint    Run Ruff and Black formatting checks without modifying files.
   flake8  Run Flake8 style checks.
   bandit  Run Bandit security scan.
   all     Run all checks sequentially and fail if any check fails.
@@ -43,7 +43,7 @@ run_step() {
 run_lint() {
     local failed=0
     run_step 'Ruff lint' ruff check "${TARGETS[@]}" || failed=1
-    run_step 'Black formatting' black "${TARGETS[@]}" || failed=1
+    run_step 'Black formatting check' black --check "${TARGETS[@]}" || failed=1
     return "${failed}"
 }
 

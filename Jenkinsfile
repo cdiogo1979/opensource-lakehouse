@@ -17,6 +17,26 @@ pipeline {
             }
         }
 
+        stage('Code Analysis') {
+            parallel {
+                stage('Lint and Formatting') {
+                    steps {
+                        sh 'PATH=".venv/bin:$PATH" scripts/code_quality.sh lint'
+                    }
+                }
+                stage('Flake8 Style Check') {
+                    steps {
+                        sh 'PATH=".venv/bin:$PATH" scripts/code_quality.sh flake8'
+                    }
+                }
+                stage('Bandit Security Scan') {
+                    steps {
+                        sh 'PATH=".venv/bin:$PATH" scripts/code_quality.sh bandit'
+                    }
+                }
+            }
+        }
+
         stage('Unit tests') {
             steps {
                 sh '.venv/bin/python -m pytest -q'

@@ -36,16 +36,6 @@ logger = logging.getLogger(__name__)
 # %%
 # %run ./jupyter_helper.py
 
-# %%
-if "ipykernel" not in sys.modules:
-    from notebooks.common.job_runtime import start_spark_job
-
-    spark, config = start_spark_job("init_environment")
-
-logger.info("Environment: %s", config.environment)
-logger.info("Loaded configuration: %s", config.to_dict())
-
-
 # %% [markdown]
 # ## Workload settings and operations
 #
@@ -134,6 +124,16 @@ def initialize_environment(spark: Any, config: Mapping[str, Any]) -> None:
 
 # %%
 if __name__ == "__main__":
+    # Importing this workload from pytest or another module must not start
+    # Spark or parse the caller's command-line arguments. In Jupyter, the
+    # preceding %run magic supplies `spark` and `config` in this namespace.
+    if "ipykernel" not in sys.modules:
+        from notebooks.common.job_runtime import start_spark_job
+
+        spark, config = start_spark_job("init_environment")
+
+    logger.info("Environment: %s", config.environment)
+    logger.info("Loaded configuration: %s", config.to_dict())
     try:
         initialize_environment(spark, config)
     finally:

@@ -3,3 +3,8 @@
 PyYAML
 hypothesis
 pytest
+black==26.5.1
+ruff==0.16.6
+flake8==7.4.1
+Flake8-pyproject==1.2.4
+bandit[toml]==1.9.4
