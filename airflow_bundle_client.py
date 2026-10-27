@@ -149,8 +149,10 @@ def validate_feature_ref(
     if allowed_prefixes and not any(tracking_ref.startswith(prefix) for prefix in allowed_prefixes):
         raise BundleClientError("tracking ref does not match the configured branch prefix")
     try:
-        result = subprocess.run(  # nosec B603 - fixed git argv, shell disabled; ref is Git-validated below.
-            ["git", "check-ref-format", f"refs/heads/{tracking_ref}"],  # nosec B607 - Git is resolved by PATH in the managed CI/runtime image.
+        # This fixed Git argv uses no shell; the supplied branch name is
+        # separately constrained and validated with `git check-ref-format`.
+        result = subprocess.run(  # nosec B603, B607
+            ["git", "check-ref-format", f"refs/heads/{tracking_ref}"],
             check=False,
             capture_output=True,
             text=True,

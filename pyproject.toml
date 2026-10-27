@@ -24,7 +24,7 @@ select = ["E4", "E7", "E9", "F"]
 
 [tool.flake8]
 max-line-length = 200
-ignore = ["E402"]
+ignore = ["E203", "E402"]
 exclude = [".git", ".venv", "venv", "aidlc-docs"]
 builtins = "spark,dbutils"
 
