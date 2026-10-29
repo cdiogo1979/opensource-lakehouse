@@ -28,16 +28,6 @@ logger = logging.getLogger(__name__)
 # %%
 # %run ./jupyter_helper.py
 
-# %%
-if "ipykernel" not in sys.modules:
-    from notebooks.common.job_runtime import start_spark_job
-
-    spark, config = start_spark_job("count_sample_rows")
-
-logger.info("Environment: %s", config.environment)
-logger.info("Loaded configuration: %s", config.to_dict())
-
-
 # %% [markdown]
 # ## Count the table rows
 #
@@ -70,6 +60,12 @@ def count_sample_rows(spark: Any, config: Mapping[str, Any]) -> int:
 
 # %%
 if __name__ == "__main__":
+    if "ipykernel" not in sys.modules:
+        from notebooks.common.job_runtime import start_spark_job
+
+        spark, config = start_spark_job("count_sample_rows")
+    logger.info("Environment: %s", config.environment)
+    logger.info("Loaded configuration: %s", config.to_dict())
     try:
         count_sample_rows(spark, config)
     finally:

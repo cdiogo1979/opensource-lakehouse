@@ -182,18 +182,18 @@ def test_example_bundle_config_has_isolated_environment_dag_paths() -> None:
 
 
 def test_dag_factory_reuses_spark_container_for_bundle_workloads() -> None:
-    dag_path = REPOSITORY_ROOT / "dags" / "init_environment.py"
+    dag_path = REPOSITORY_ROOT / "dags" / "test_environment.py"
     source = dag_path.read_text(encoding="utf-8")
     factory_path = REPOSITORY_ROOT / "dags" / "dag_factory.py"
     factory = factory_path.read_text(encoding="utf-8")
 
     assert dag_path.is_file()
     assert 'dag_name="init_environment"' in source
-    assert '"task_name": "initialize_environment_first"' in source
-    assert '"task_name": "initialize_environment_second"' in source
+    assert '"task_name": "test_environment_first"' in source
+    assert '"task_name": "test_environment_second"' in source
     assert '"task_name": "count_sample_rows"' in source
     assert '"entrypoint_file": "count_sample_rows.py"' in source
-    assert '"runs_after": ("initialize_environment_first",)' in source
+    assert '"runs_after": ("test_environment_first",)' in source
     assert "schedule=None" in source
     assert "create_spark_dag(" in source
     assert 'task_id="validate_environment"' in factory

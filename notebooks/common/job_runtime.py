@@ -1,6 +1,5 @@
 """Shared startup helpers for Jupyter and spark-submit workloads."""
 
-import logging
 import os
 import sys
 from argparse import Namespace
@@ -9,55 +8,64 @@ from typing import Any
 from .cli import parse_args
 from .config_loader import EnvironmentConfig, load_environment_config
 
-LOGGER = logging.getLogger(__name__)
+CATALOGS = {"lakehouse": "lakehouse", "lakehouse_uat": "lakehouse_uat", "lakehouse_dev": "lakehouse_dev"}
+AUTH_MANAGER = "local.lakehouse.spark.auth.LakehouseTokenAuthManager"
 
 
-def _login_spark_writer(spark: Any) -> None:
-    """Log an Airflow Spark driver in with its mounted writer keytab.
-
-    Jupyter sessions omit these deployment variables and retain their own
-    interactive Kerberos login. Airflow's per-run container supplies both.
-
-    Args:
-        spark: Started SparkSession with Hadoop Kerberos configuration.
-
-    Raises:
-        RuntimeError: If only one deployment credential setting is provided
-            or Hadoop UGI does not acquire Kerberos credentials.
-        FileNotFoundError: If the configured keytab is unavailable.
-    """
-    principal = os.environ.get("SPARK_WRITER_PRINCIPAL")
-    keytab = os.environ.get("SPARK_WRITER_KEYTAB")
-    if not principal and not keytab:
+def _select_token_provider() -> None:
+    """Select one broker adapter and seed its initial JWT in process memory."""
+    provider = os.environ.get("LAKEHOUSE_TOKEN_PROVIDER")
+    if provider == "airflow":
+        required = (
+            "LAKEHOUSE_INITIAL_ACCESS_TOKEN",
+            "LAKEHOUSE_TOKEN_BROKER_URL",
+            "LAKEHOUSE_TOKEN_BROKER_CA",
+            "LAKEHOUSE_RUN_HANDLE",
+            "LAKEHOUSE_RUN_CAPABILITY",
+        )
+        if any(not os.environ.get(key) for key in required):
+            raise RuntimeError("Airflow Spark token renewal is missing required run-scoped configuration.")
         return
-    if not principal or not keytab:
-        raise RuntimeError("SPARK_WRITER_PRINCIPAL and SPARK_WRITER_KEYTAB must be configured together.")
-    if not os.path.isfile(keytab):
-        raise FileNotFoundError("Configured Spark writer keytab is unavailable.")
+    if provider not in (None, "jupyter"):
+        raise RuntimeError("Unsupported Lakehouse token provider.")
 
-    ugi = spark.sparkContext._jvm.org.apache.hadoop.security.UserGroupInformation
-    ugi.loginUserFromKeytab(principal, keytab)
-    login_user = ugi.getLoginUser()
-    if not login_user.hasKerberosCredentials() or not login_user.isFromKeytab():
-        raise RuntimeError("Spark Hadoop UGI did not acquire Kerberos credentials from keytab.")
-    LOGGER.info("Spark Hadoop UGI logged in from keytab as %s", login_user.getUserName())
+    if "ipykernel" in sys.modules or provider == "jupyter":
+        if not os.environ.get("JUPYTERHUB_API_TOKEN"):
+            raise RuntimeError("The authenticated JupyterHub server token is unavailable.")
+        from lakehouse_broker_client import request_user_token
+
+        broker_token = request_user_token()
+        os.environ["LAKEHOUSE_TOKEN_PROVIDER"] = "jupyter"
+        os.environ["LAKEHOUSE_INITIAL_ACCESS_TOKEN"] = broker_token.access_token
+        os.environ.setdefault("LAKEHOUSE_TOKEN_BROKER_URL", "https://jupyterhub:8443/api/v1/token")
+        os.environ.setdefault("LAKEHOUSE_TOKEN_BROKER_CA", "/run/certs/jupyterhub-broker-ca.crt")
+        return
+    raise RuntimeError("Set an authenticated JupyterHub or Airflow token provider before starting Spark.")
+
+
+def _configure_rest_catalogs(builder: Any, default_catalog: str) -> Any:
+    if default_catalog not in CATALOGS:
+        raise RuntimeError("The environment selected an unsupported Polaris catalog.")
+    builder = builder.config("spark.sql.defaultCatalog", default_catalog)
+    for catalog, warehouse in CATALOGS.items():
+        prefix = f"spark.sql.catalog.{catalog}"
+        settings = {
+            "": "org.apache.iceberg.spark.SparkCatalog",
+            ".type": "rest",
+            ".uri": "http://polaris:8181/api/catalog",
+            ".warehouse": warehouse,
+            ".rest.auth.type": AUTH_MANAGER,
+            ".io-impl": "org.apache.iceberg.aws.s3.S3FileIO",
+            ".header.Polaris-Realm": "lakehouse",
+            ".header.X-Iceberg-Access-Delegation": "vended-credentials",
+        }
+        for suffix, value in settings.items():
+            builder = builder.config(prefix + suffix, value)
+    return builder
 
 
 def start_spark_job(app_name: str, argv: Any = None) -> tuple[Any, EnvironmentConfig]:
-    """Load environment settings and start a Spark session.
-
-    In Jupyter, select the environment with ``LAKEHOUSE_ENVIRONMENT`` and
-    optionally override the config directory with ``LAKEHOUSE_CONFIG_DIR``.
-    In spark-submit, parse the shared ``--environment`` and ``--config-dir``
-    arguments.
-
-    Args:
-        app_name: Spark application name to display in the Spark UI.
-        argv: Optional command-line arguments for direct invocation.
-
-    Returns:
-        The started Spark session and validated environment configuration.
-    """
+    """Load environment settings and start a broker-authenticated Spark session."""
     if "ipykernel" in sys.modules:
         args = Namespace(
             environment=os.environ.get("LAKEHOUSE_ENVIRONMENT", "dev"),
@@ -66,20 +74,20 @@ def start_spark_job(app_name: str, argv: Any = None) -> tuple[Any, EnvironmentCo
     else:
         args = parse_args(argv)
 
+    config_dir = args.config_dir
+    if config_dir == "spark-files":
+        from pyspark import SparkFiles
+
+        config_dir = SparkFiles.getRootDirectory()
+    config = load_environment_config(args.environment, config_dir)
+    _select_token_provider()
+
     from pyspark.sql import SparkSession
 
-    spark = SparkSession.builder.appName(f"{args.environment}-{app_name}").getOrCreate()
-    try:
-        _login_spark_writer(spark)
-        config_dir = args.config_dir
-        if config_dir == "spark-files":
-            from pyspark import SparkFiles
-
-            config_dir = SparkFiles.getRootDirectory()
-
-        config = load_environment_config(args.environment, config_dir)
-    except Exception:
-        spark.stop()
-        raise
-
+    spark = (
+        _configure_rest_catalogs(SparkSession.builder.appName(f"{args.environment}-{app_name}"), config.catalog_name)
+        .config("spark.redaction.regex", r"(?i)secret|password|token|access[.]?key|credential")
+        .config("spark.sql.redaction.options.regex", r"(?i)secret|password|token|access[.]?key|credential")
+        .getOrCreate()
+    )
     return spark, config
