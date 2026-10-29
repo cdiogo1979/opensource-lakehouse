@@ -1,3 +1,4 @@
 # Replace these conspicuous placeholders with approved UAT targets before execution.
-storage_path: "s3a://lake/opensource-lakehouse/uat/"
+storage_path: "s3a://bucket-default-uat/"
+catalog_name: "lakehouse_uat"
 database_name: "default_lhuat"

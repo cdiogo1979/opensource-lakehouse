@@ -52,22 +52,6 @@ SAMPLE_ROWS = (
 SAMPLE_SCHEMA = "record_id STRING, category STRING, quantity INT"
 
 
-def create_namespace(spark: Any, config: Mapping[str, Any]) -> None:
-    """Create the configured catalog namespace if it does not exist.
-
-    Args:
-        spark: Active SparkSession-compatible object.
-        config: Validated settings for the explicitly selected environment.
-    """
-    database_name = config["database_name"]
-    if spark.catalog.databaseExists(database_name):
-        logger.info("Namespace '%s' already exists.", database_name)
-        return
-
-    logger.info("Namespace '%s' does not exist; creating it.", database_name)
-    spark.sql(f"CREATE NAMESPACE IF NOT EXISTS {database_name}")
-    logger.info("Created namespace '%s'.", database_name)
-
 
 def write_sample_dataset(spark: Any, config: Mapping[str, Any]) -> None:
     """Overwrite the dedicated sample table at its environment child path.
@@ -77,7 +61,7 @@ def write_sample_dataset(spark: Any, config: Mapping[str, Any]) -> None:
         config: Validated settings for the explicitly selected environment.
     """
     storage_path = config["storage_path"].rstrip("/")
-    output_path = f"{storage_path}/{config['database_name']}/{SAMPLE_TABLE_NAME}"
+    output_path = f"{storage_path}/{config['catalog_name']}/{config['database_name']}/{SAMPLE_TABLE_NAME}"
     table_identifier = f"{config['database_name']}.{SAMPLE_TABLE_NAME}"
     if spark.catalog.tableExists(table_identifier):
         logger.info(
@@ -99,14 +83,13 @@ def write_sample_dataset(spark: Any, config: Mapping[str, Any]) -> None:
     )
 
 
-def initialize_environment(spark: Any, config: Mapping[str, Any]) -> None:
-    """Initialize the namespace and write its synthetic smoke table.
+def test_environment(spark: Any, config: Mapping[str, Any]) -> None:
+    """Write its synthetic smoke table.
 
     Args:
         spark: Active SparkSession-compatible object.
         config: Validated settings for the explicitly selected environment.
     """
-    create_namespace(spark, config)
     write_sample_dataset(spark, config)
 
 
@@ -125,11 +108,11 @@ if __name__ == "__main__":
     if "ipykernel" not in sys.modules:
         from notebooks.common.job_runtime import start_spark_job
 
-        spark, config = start_spark_job("init_environment")
+        spark, config = start_spark_job("test_environment")
 
     logger.info("Environment: %s", config.environment)
     logger.info("Loaded configuration: %s", config.to_dict())
     try:
-        initialize_environment(spark, config)
+        test_environment(spark, config)
     finally:
         spark.stop()

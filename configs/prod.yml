@@ -1,3 +1,5 @@
 # RustFS object prefix and Hive catalog namespace for production.
-storage_path: "s3a://lake/opensource-lakehouse/prod/"
+storage_path: "s3a://bucket-default/"
+catalog_name: "lakehouse"
 database_name: "default_lh"
+

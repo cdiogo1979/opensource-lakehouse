@@ -1,4 +1,6 @@
 # RustFS object prefix and Hive catalog namespace for development.
-storage_path: "s3a://lake/opensource-lakehouse/dev/"
+# Replace these conspicuous placeholders with approved UAT targets before execution.
+storage_path: "s3a://bucket-default-dev/"
+catalog_name: "lakehouse_dev"
 database_name: "default_lhdev"
 
