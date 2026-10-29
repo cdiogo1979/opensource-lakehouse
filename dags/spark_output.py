@@ -2,7 +2,7 @@
 
 import re
 
-_JWT_RE = re.compile(r"\b[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\b")
+_JWT_RE = re.compile(r"\beyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\b")
 _SENSITIVE_VALUE_RE = re.compile(r"(?i)\b(authorization|access[_ -]?token|refresh[_ -]?token|token|client[_ -]?secret|password|secret|credential)\b" r"([\"']?\s*[:=]\s*[\"']?)([^\s,;\"'}]+)")
 
 
@@ -13,4 +13,6 @@ def redact_spark_output(output: bytes | str) -> str:
     text = _SENSITIVE_VALUE_RE.sub(r"\1\2<redacted>", text)
     text = _JWT_RE.sub("<redacted-jwt>", text)
     text = re.sub(r"\b[A-Za-z0-9_-]{48,}\b", "<redacted-value>", text)
-    return text[-6000:]
+    if len(text) > 8000:
+        return f"{text[:4000]}\n... diagnostic middle omitted ...\n{text[-4000:]}"
+    return text

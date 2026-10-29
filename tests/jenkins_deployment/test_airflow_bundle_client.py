@@ -213,7 +213,7 @@ def test_dag_factory_reuses_spark_container_for_bundle_workloads() -> None:
 
 def test_spark_failure_output_redacts_credentials() -> None:
     secret = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
-    jwt = "headersegment.payloadsegment.signaturesegment"
+    jwt = "eyJhbGciOiJSUzI1NiJ9.payloadsegment.signaturesegment"
     output = f'Authorization: Bearer {jwt}\naccess_token="{secret}" token={secret}'
 
     redacted = redact_spark_output(output)
