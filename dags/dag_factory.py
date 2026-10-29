@@ -381,6 +381,8 @@ def _submit_spark_job(
         if result.exit_code != 0:
             LOGGER.error("Spark workload %s failed; sanitized output follows:\n%s", entrypoint_file, redact_spark_output(result.output or b""))
             raise AirflowException(f"spark-submit for {entrypoint_file} exited with status {result.exit_code}.")
+        else:
+            LOGGER.info("Spark workload %s succeeded; sanitized output follows:\n%s", entrypoint_file, redact_spark_output(result.output or b""))
     finally:
         client.close()
 
