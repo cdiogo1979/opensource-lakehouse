@@ -208,15 +208,17 @@ def _broker_request(method: str, route: str, payload: Mapping[str, Any] | None, 
     """
     base_url = os.environ.get("LAKEHOUSE_BROKER_URL", "https://airflow-token-broker:8443").rstrip("/")
     parsed_base_url = urlsplit(base_url)
-    if (
-        parsed_base_url.scheme != "https"
-        or parsed_base_url.hostname != "airflow-token-broker"
-        or parsed_base_url.port != 8443
-        or parsed_base_url.path
-        or parsed_base_url.query
-        or parsed_base_url.fragment
-        or parsed_base_url.username
-        or parsed_base_url.password
+    if any(
+        (
+            parsed_base_url.scheme != "https",
+            parsed_base_url.hostname != "airflow-token-broker",
+            parsed_base_url.port != 8443,
+            bool(parsed_base_url.path),
+            bool(parsed_base_url.query),
+            bool(parsed_base_url.fragment),
+            bool(parsed_base_url.username),
+            bool(parsed_base_url.password),
+        )
     ):
         raise AirflowException("The token broker endpoint is not the approved private HTTPS service.")
     ca_file = os.environ.get("LAKEHOUSE_BROKER_CA_FILE", "/run/certs/airflow-token-broker-ca.crt")
@@ -229,7 +231,7 @@ def _broker_request(method: str, route: str, payload: Mapping[str, Any] | None, 
             headers={"Authorization": f"Bearer {credential}", "Accept": "application/json", "Content-Type": "application/json"},
             method=method,
         )
-        with urlopen(request, context=context, timeout=5) as response:
+        with urlopen(request, context=context, timeout=5) as response:  # nosec B310 - scheme, host, and CA are pinned above.
             raw = response.read()
         return json.loads(raw) if raw else None
     except (HTTPError, URLError, TimeoutError, OSError, ValueError, json.JSONDecodeError):
@@ -305,7 +307,7 @@ def _create_spark_container(
                 "AWS_REGION": aws_region,
                 "AWS_DEFAULT_REGION": aws_region,
                 "AWS_EC2_METADATA_DISABLED": "true",
-                "LAKEHOUSE_TOKEN_PROVIDER": "airflow",
+                "LAKEHOUSE_TOKEN_PROVIDER": "airflow",  # nosec B105 - provider selector, not a credential.
                 "LAKEHOUSE_INITIAL_ACCESS_TOKEN": initial_token,
                 "LAKEHOUSE_TOKEN_BROKER_URL": os.environ.get("LAKEHOUSE_BROKER_URL", "https://airflow-token-broker:8443"),
                 "LAKEHOUSE_TOKEN_BROKER_CA": broker_ca_container_path,

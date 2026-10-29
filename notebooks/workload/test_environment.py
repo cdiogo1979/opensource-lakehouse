@@ -52,7 +52,6 @@ SAMPLE_ROWS = (
 SAMPLE_SCHEMA = "record_id STRING, category STRING, quantity INT"
 
 
-
 def write_sample_dataset(spark: Any, config: Mapping[str, Any]) -> None:
     """Overwrite the dedicated sample table at its environment child path.
 

@@ -35,7 +35,7 @@ def _select_token_provider() -> None:
         from lakehouse_broker_client import request_user_token
 
         broker_token = request_user_token()
-        os.environ["LAKEHOUSE_TOKEN_PROVIDER"] = "jupyter"
+        os.environ["LAKEHOUSE_TOKEN_PROVIDER"] = "jupyter"  # nosec B105 - provider selector, not a credential.
         os.environ["LAKEHOUSE_INITIAL_ACCESS_TOKEN"] = broker_token.access_token
         os.environ.setdefault("LAKEHOUSE_TOKEN_BROKER_URL", "https://jupyterhub:8443/api/v1/token")
         os.environ.setdefault("LAKEHOUSE_TOKEN_BROKER_CA", "/run/certs/jupyterhub-broker-ca.crt")

@@ -9,7 +9,7 @@ from hypothesis import given, seed, settings, strategies as st
 import yaml
 
 from config_loader import EnvironmentConfig, load_environment_config
-from init_environment import initialize_environment
+from test_environment import SAMPLE_ROWS, SAMPLE_TABLE_NAME, write_sample_dataset
 
 HYPOTHESIS_SEED = int(os.environ.get("HYPOTHESIS_SEED", "0"))
 ENVIRONMENTS = ("dev", "uat", "prod")
@@ -230,7 +230,8 @@ class _FakeSparkSession:
             "uat_sample_db.sample_spark_job_output": {
                 "rows": list(initial_rows),
                 "path": "s3a://old-location",
-            }
+            },
+            "uat_sample_db.unrelated_table": {"rows": [("keep",)], "path": "s3a://unrelated"},
         }
         self.namespaces = {"existing_namespace"}
         self.paths = {"s3a://bucket-uat/unrelated/": "preserve-me"}
@@ -263,25 +264,27 @@ class _FakeSparkSession:
 @given(
     existing=st.lists(st.tuples(st.text(max_size=12), st.integers()), max_size=20),
 )
-def test_repeating_initialization_is_idempotent_and_preserves_unrelated_state(existing):
-    """Repeated initialization keeps the smoke table and unrelated state stable."""
+def test_repeated_sample_writes_replace_only_the_sample_table(existing):
+    """Repeated sample writes are stable and preserve unrelated table data."""
     config = EnvironmentConfig(
         environment="uat",
         settings={
             "storage_path": "s3a://bucket-uat/sample/",
+            "catalog_name": "lakehouse",
             "database_name": "uat_sample_db",
         },
     )
     initial_rows = [(f"old-{index}", str(value), int(index)) for index, value in enumerate(existing)]
     once = _FakeSparkSession(initial_rows)
     twice = _FakeSparkSession(initial_rows)
-    initialize_environment(once, config)
-    initialize_environment(twice, config)
-    initialize_environment(twice, config)
+    write_sample_dataset(once, config)
+    write_sample_dataset(twice, config)
+    write_sample_dataset(twice, config)
 
-    assert once.namespaces == twice.namespaces
-    assert "uat_sample_db" in once.namespaces
+    sample_table = f"uat_sample_db.{SAMPLE_TABLE_NAME}"
     assert once.paths == twice.paths
-    assert once.tables["uat_sample_db.sample_spark_job_output"]["path"] == "s3a://bucket-uat/sample/uat_sample_db/sample_spark_job_output"
+    assert once.tables[sample_table]["rows"] == list(SAMPLE_ROWS)
+    assert once.tables[sample_table]["path"] == "s3a://bucket-uat/sample/lakehouse/uat_sample_db/sample_spark_job_output"
     assert once.tables == twice.tables
+    assert once.tables["uat_sample_db.unrelated_table"] == {"rows": [("keep",)], "path": "s3a://unrelated"}
     assert once.paths["s3a://bucket-uat/unrelated/"] == "preserve-me"

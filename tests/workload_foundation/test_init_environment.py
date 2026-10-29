@@ -2,13 +2,11 @@
 
 import pytest
 
-import init_environment
 from config_loader import EnvironmentConfig, load_environment_config
-from init_environment import (
+from test_environment import (
     SAMPLE_ROWS,
     SAMPLE_SCHEMA,
     SAMPLE_TABLE_NAME,
-    create_namespace,
     write_sample_dataset,
 )
 from dag_defaults import identity_for_bundle, standard_dag_kwargs
@@ -59,14 +57,10 @@ class _FakeSpark:
 
     def __init__(self):
         self.statements = []
-        self.namespaces = set()
         self.tables = set()
-        self.catalog = _FakeCatalog(self.namespaces, self.tables)
+        self.catalog = _FakeCatalog(set(), self.tables)
         self.writer = _FakeDataFrameWriter()
         self.writer.spark = self
-
-    def sql(self, statement):
-        self.statements.append(statement)
 
     def createDataFrame(self, rows, schema):
         assert rows == SAMPLE_ROWS
@@ -148,24 +142,11 @@ def test_local_dag_path_defaults_to_dev(tmp_path):
     assert identity_for_bundle(dags_dir) == ("dev", "dev")
 
 
-def test_create_namespace_uses_idempotent_catalog_statement():
-    """The configured namespace is created only through IF NOT EXISTS."""
-    config = EnvironmentConfig(
-        environment="dev",
-        settings={"storage_path": "s3a://bucket-dev/root/", "database_name": "dev_db"},
-    )
-    spark = _FakeSpark()
-
-    create_namespace(spark, config)
-
-    assert spark.statements == ["CREATE NAMESPACE IF NOT EXISTS dev_db"]
-
-
 def test_smoke_write_is_limited_to_dedicated_table_and_child_path():
     """The retained smoke test overwrites only its dedicated table path."""
     config = EnvironmentConfig(
         environment="dev",
-        settings={"storage_path": "s3a://bucket-dev/root/", "database_name": "dev_db"},
+        settings={"storage_path": "s3a://bucket-dev/root/", "catalog_name": "lakehouse", "database_name": "dev_db"},
     )
     spark = _FakeSpark()
 
@@ -174,20 +155,5 @@ def test_smoke_write_is_limited_to_dedicated_table_and_child_path():
     assert SAMPLE_TABLE_NAME == "sample_spark_job_output"
     assert spark.writer.source_format == "iceberg"
     assert spark.writer.write_mode == "overwrite"
-    assert spark.writer.options == {"path": "s3a://bucket-dev/root/dev_db/sample_spark_job_output"}
+    assert spark.writer.options == {"path": "s3a://bucket-dev/root/lakehouse/dev_db/sample_spark_job_output"}
     assert spark.writer.table_name == "dev_db.sample_spark_job_output"
-
-
-def test_initialization_creates_namespace_then_writes_smoke_table():
-    """Catalog setup and the table write initialize the object storage prefix."""
-    config = EnvironmentConfig(
-        environment="dev",
-        settings={"storage_path": "s3a://bucket-dev/root/", "database_name": "dev_db"},
-    )
-    spark = _FakeSpark()
-
-    init_environment.initialize_environment(spark, config)
-
-    assert spark.statements == ["CREATE NAMESPACE IF NOT EXISTS dev_db"]
-    assert spark.writer.table_name == "dev_db.sample_spark_job_output"
-    assert spark.writer.options["path"] == "s3a://bucket-dev/root/dev_db/sample_spark_job_output"
