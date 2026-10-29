@@ -86,7 +86,7 @@ def start_spark_job(app_name: str, argv: Any = None) -> tuple[Any, EnvironmentCo
     from pyspark.sql import SparkSession
 
     spark = (
-        _configure_rest_catalogs(SparkSession.builder.appName(f"{args.environment}-{app_name}"), config.catalog_name)
+        _configure_rest_catalogs(SparkSession.builder.appName(f"{args.environment}-{app_name}"), config["catalog_name"])
         .config("spark.redaction.regex", r"(?i)secret|password|token|access[.]?key|credential")
         .config("spark.sql.redaction.options.regex", r"(?i)secret|password|token|access[.]?key|credential")
         .getOrCreate()
