@@ -7,7 +7,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from dag_factory import create_spark_dag  # noqa: E402
 
 dag = create_spark_dag(
-    dag_name="init_environment",
+    dag_name="test_environment",
     workloads=(
         {
             "task_name": "test_environment_first",
