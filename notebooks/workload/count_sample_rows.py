@@ -59,7 +59,10 @@ def count_sample_rows(spark: Any, config: Mapping[str, Any]) -> int:
 # ## Run the count and stop Spark
 
 # %%
-if __name__ == "__main__":
+if __name__ == "__main__" and "airflow" not in sys.modules:
+    # Airflow's bundle parser scans repository Python files as well as dags/;
+    # it may execute this module as __main__, but must never invoke the Spark
+    # CLI parser while discovering DAGs.
     if "ipykernel" not in sys.modules:
         from notebooks.common.job_runtime import start_spark_job
 
