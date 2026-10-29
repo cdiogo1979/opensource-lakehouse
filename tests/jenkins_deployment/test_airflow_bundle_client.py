@@ -9,6 +9,7 @@ import pytest
 from hypothesis import given, strategies as st
 
 import airflow_bundle_client as client
+from dags.spark_output import redact_spark_output
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
 
@@ -206,6 +207,18 @@ def test_dag_factory_reuses_spark_container_for_bundle_workloads() -> None:
     assert "dag_id_prefix=dag_id_prefix" in factory
     assert "SparkSubmitOperator" not in factory
     assert "RELEASE_ID" not in factory
+
+
+def test_spark_failure_output_redacts_credentials() -> None:
+    secret = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
+    jwt = "headersegment.payloadsegment.signaturesegment"
+    output = f'Authorization: Bearer {jwt}\naccess_token="{secret}" token={secret}'
+
+    redacted = redact_spark_output(output)
+
+    assert jwt not in redacted
+    assert secret not in redacted
+    assert "<redacted>" in redacted
 
 
 def test_settings_reject_shell_string_apply_command(tmp_path: Path) -> None:

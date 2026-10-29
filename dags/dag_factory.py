@@ -22,6 +22,7 @@ from airflow.operators.python import PythonOperator
 from airflow.utils.trigger_rule import TriggerRule
 
 from dag_defaults import identity_for_bundle, standard_dag_kwargs
+from spark_output import redact_spark_output
 
 DAGS_DIR = Path(__file__).resolve().parent
 BUNDLE_ROOT = DAGS_DIR.parent
@@ -381,8 +382,8 @@ def _submit_spark_job(
     try:
         container = client.containers.get(container_name)
         result = container.exec_run(command, workdir=str(CONTAINER_BUNDLE_ROOT), demux=False)
-        # Spark output can contain bearer values or configuration; keep it out of task logs.
         if result.exit_code != 0:
+            LOGGER.error("Spark workload %s failed; sanitized output follows:\n%s", entrypoint_file, redact_spark_output(result.output or b""))
             raise AirflowException(f"spark-submit for {entrypoint_file} exited with status {result.exit_code}.")
     finally:
         client.close()
@@ -421,6 +422,10 @@ def _stop_spark_container(docker_url: str, **context: object) -> None:
             cleanup_errors.append("broker")
     if cleanup_errors:
         raise AirflowException("Airflow writer-run cleanup was incomplete; broker expiry remains the fallback.")
+    task_instances = context["dag_run"].get_task_instances()
+    failed_workloads = sorted(task.task_id for task in task_instances if task.task_id.startswith("submit_") and task.state == "failed")
+    if failed_workloads:
+        raise AirflowException(f"Spark workload task(s) failed: {', '.join(failed_workloads)}.")
 
 
 def create_spark_dag(
