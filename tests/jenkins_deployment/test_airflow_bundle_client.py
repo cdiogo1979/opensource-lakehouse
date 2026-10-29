@@ -200,6 +200,8 @@ def test_dag_factory_reuses_spark_container_for_bundle_workloads() -> None:
     assert 'task_id="validate_environment"' in factory
     assert 'task_id="create_cluster"' in factory
     assert 'task_id="stop_cluster"' in factory
+    assert 'task_id="verify_workloads_succeeded"' in factory
+    assert "stop_cluster >> verify_workloads" in factory
     assert "_submit_spark_job" in factory
     assert "TriggerRule.ALL_DONE" in factory
     assert '"/opt/spark/bin/spark-submit"' in factory

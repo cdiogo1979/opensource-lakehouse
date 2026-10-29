@@ -418,10 +418,10 @@ def _stop_spark_container(docker_url: str, **context: object) -> None:
             cleanup_errors.append("broker")
     if cleanup_errors:
         raise AirflowException("Airflow writer-run cleanup was incomplete; broker expiry remains the fallback.")
-    task_instances = context["dag_run"].get_task_instances()
-    failed_workloads = sorted(task.task_id for task in task_instances if task.task_id.startswith("submit_") and task.state == "failed")
-    if failed_workloads:
-        raise AirflowException(f"Spark workload task(s) failed: {', '.join(failed_workloads)}.")
+
+
+def _verify_workloads_succeeded() -> None:
+    """Provide an all-success leaf after every workload and cleanup task."""
 
 
 def create_spark_dag(
@@ -518,6 +518,11 @@ def create_spark_dag(
         trigger_rule=TriggerRule.ALL_DONE,
         dag=dag,
     )
+    verify_workloads = PythonOperator(
+        task_id="verify_workloads_succeeded",
+        python_callable=_verify_workloads_succeeded,
+        dag=dag,
+    )
 
     validate_environment >> create_cluster
     for workload in normalized_workloads:
@@ -528,4 +533,6 @@ def create_spark_dag(
         else:
             create_cluster >> submit_task
         submit_task >> stop_cluster
+        submit_task >> verify_workloads
+    stop_cluster >> verify_workloads
     return dag
