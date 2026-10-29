@@ -13,6 +13,4 @@ def redact_spark_output(output: bytes | str) -> str:
     text = _SENSITIVE_VALUE_RE.sub(r"\1\2<redacted>", text)
     text = _JWT_RE.sub("<redacted-jwt>", text)
     text = re.sub(r"\b[A-Za-z0-9_-]{48,}\b", "<redacted-value>", text)
-    if len(text) > 8000:
-        return f"{text[:4000]}\n... diagnostic middle omitted ...\n{text[-4000:]}"
-    return text
+    return text[-20000:]
