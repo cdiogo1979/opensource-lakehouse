@@ -203,6 +203,8 @@ def test_dag_factory_reuses_spark_container_for_bundle_workloads() -> None:
     assert "_submit_spark_job" in factory
     assert "TriggerRule.ALL_DONE" in factory
     assert '"/opt/spark/bin/spark-submit"' in factory
+    assert 'str(CONTAINER_BUNDLE_ROOT / "configs")' in factory
+    assert '"spark-files"' not in factory
     assert "identity_for_bundle(DAGS_DIR)" in factory
     assert "dag_id_prefix=dag_id_prefix" in factory
     assert "SparkSubmitOperator" not in factory

@@ -340,7 +340,6 @@ def _create_spark_container(
 def _submit_spark_job(
     entrypoint_file: str,
     environment: str,
-    config_path: str,
     docker_url: str,
     spark_master: str,
     **context: object,
@@ -350,7 +349,6 @@ def _submit_spark_job(
     Args:
         entrypoint_file: Python job path relative to the bundle root.
         environment: Selected lakehouse environment.
-        config_path: Environment YAML path inside the Spark container.
         docker_url: Docker daemon URL.
         spark_master: Spark master URL; defaults to local mode.
         **context: Airflow task context, including task instance and DAG run.
@@ -369,13 +367,11 @@ def _submit_spark_job(
         "/opt/spark/bin/spark-submit",
         "--master",
         spark_master,
-        "--files",
-        config_path,
         str(container_entrypoint),
         "--environment",
         environment,
         "--config-dir",
-        "spark-files",
+        str(CONTAINER_BUNDLE_ROOT / "configs"),
     ]
 
     client = docker.DockerClient(base_url=docker_url)
@@ -455,8 +451,6 @@ def create_spark_dag(
 
     dag_id_prefix, environment = identity_for_bundle(DAGS_DIR)
     workload_names = [workload.task_name for workload in normalized_workloads]
-    config_path = CONFIG_DIR / f"{environment}.yml"
-    container_config_path = str(CONTAINER_BUNDLE_ROOT / config_path.relative_to(BUNDLE_ROOT))
     spark_job_image = os.environ.get("LAKEHOUSE_SPARK_IMAGE", "airflow-spark-job:3.5.5_1.8.1")
     spark_master = os.environ.get("LAKEHOUSE_SPARK_MASTER", "local[*]")
     docker_url = os.environ.get("LAKEHOUSE_DOCKER_URL", "unix://var/run/docker.sock")
@@ -510,7 +504,6 @@ def create_spark_dag(
             op_kwargs={
                 "entrypoint_file": workload.entrypoint_file,
                 "environment": environment,
-                "config_path": container_config_path,
                 "docker_url": docker_url,
                 "spark_master": spark_master,
             },

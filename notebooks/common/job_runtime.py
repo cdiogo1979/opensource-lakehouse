@@ -76,9 +76,10 @@ def start_spark_job(app_name: str, argv: Any = None) -> tuple[Any, EnvironmentCo
 
     config_dir = args.config_dir
     if config_dir == "spark-files":
-        from pyspark import SparkFiles
-
-        config_dir = SparkFiles.getRootDirectory()
+        # spark-submit does not initialize SparkFiles until SparkContext exists,
+        # but the catalog selection is needed before SparkSession startup.
+        # Airflow already mounts the selected Bundle, so use its config folder.
+        config_dir = os.environ.get("LAKEHOUSE_BUNDLE_CONFIG_DIR", "/opt/lakehouse-bundle/configs")
     config = load_environment_config(args.environment, config_dir)
     _select_token_provider()
 
