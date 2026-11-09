@@ -1,5 +1,6 @@
 """Load and validate environment-specific lakehouse configuration."""
 
+import re
 from dataclasses import dataclass
 from pathlib import Path
 from types import MappingProxyType
@@ -9,6 +10,7 @@ import yaml
 
 SUPPORTED_ENVIRONMENTS = frozenset({"dev", "uat", "prod"})
 REQUIRED_KEYS = ("storage_path", "database_name")
+PRODUCT_PATTERN = re.compile(r"^[a-z][a-z0-9]{1,19}$")
 
 
 @dataclass(frozen=True)
@@ -98,7 +100,11 @@ def _thaw_yaml_value(value: Any) -> Any:
     return value
 
 
-def load_environment_config(environment: str, config_dir: Optional[Union[str, Path]] = None) -> EnvironmentConfig:
+def load_environment_config(
+    environment: str,
+    config_dir: Optional[Union[str, Path]] = None,
+    product: Optional[str] = None,
+) -> EnvironmentConfig:
     """Load exactly one environment YAML file and validate its required values.
 
     Args:
@@ -107,12 +113,14 @@ def load_environment_config(environment: str, config_dir: Optional[Union[str, Pa
         config_dir: Optional directory containing the environment YAML files.
             By default, resolves `configs/` from the repository root relative
             to this module.
+        product: Optional data product name. When given, `<product>/<env>.yml`
+            is used if it exists, otherwise the shared `<env>.yml`.
 
     Returns:
         An immutable `EnvironmentConfig` populated from the selected file.
 
     Raises:
-        ValueError: If the environment is unsupported, YAML is malformed, its
+        ValueError: If the environment or product is invalid, YAML is malformed, its
             root is not a mapping, or a required key is missing or invalid.
         FileNotFoundError: If the selected environment file does not exist.
     """
@@ -120,8 +128,13 @@ def load_environment_config(environment: str, config_dir: Optional[Union[str, Pa
         supported = ", ".join(sorted(SUPPORTED_ENVIRONMENTS))
         raise ValueError(f"Unsupported environment {environment!r}; expected one of: {supported}.")
 
+    if product is not None and (not isinstance(product, str) or not PRODUCT_PATTERN.fullmatch(product)):
+        raise ValueError(f"Invalid data product name {product!r}.")
+
     directory = Path(config_dir) if config_dir is not None else Path(__file__).resolve().parents[2] / "configs"
     config_path = directory / f"{environment}.yml"
+    if product is not None and (directory / product / f"{environment}.yml").is_file():
+        config_path = directory / product / f"{environment}.yml"
 
     try:
         with config_path.open("r", encoding="utf-8") as config_file:

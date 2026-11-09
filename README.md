@@ -62,6 +62,10 @@ The Git ref determines which version of DAGs, configs, and Spark code Airflow lo
 | `lakehouse-dev` | `dev.yml` | `dev-` | Operator-selected feature branch |
 | `lakehouse-uat` | `uat.yml` | `uat-` | `uat` |
 | `lakehouse-prod` or `lakehouse-main` | `prod.yml` | `main-` | `main` |
+| `<product>-uat` (data product bundle) | `<product>/uat.yml`, else `uat.yml` | `<product>-uat-` | the product's `uat_branch` |
+| `<product>-main` (data product bundle) | `<product>/prod.yml`, else `prod.yml` | `<product>-main-` | the product's `prod_branch` |
+
+The lakehouse platform creates one `<product>-main` and one `<product>-uat` bundle for every data product whose definition names this repository. Their DAG IDs start with the bundle name (for example `default-main-test_environment`); the platform's token broker derives the product's writer from that prefix and checks with Airflow that the DAG really comes from that bundle, so keep the prefix the factory builds. A product can keep its own settings in `configs/<product>/<env>.yml`; without one it uses the shared file.
 
 Changing the dev tracking ref lets an operator test a feature branch while retaining the dev config and DAG identity. Each DAG run uses its recorded bundle commit so its DAG, config, helpers, and workload code stay aligned. See [AIRFLOW_BUNDLES.md](AIRFLOW_BUNDLES.md) for setup, branch selection, and operational checks.
 

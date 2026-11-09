@@ -21,7 +21,7 @@ from airflow.exceptions import AirflowException
 from airflow.operators.python import PythonOperator
 from airflow.utils.trigger_rule import TriggerRule
 
-from dag_defaults import identity_for_bundle, standard_dag_kwargs
+from dag_defaults import identity_for_bundle, product_for_bundle, standard_dag_kwargs
 from spark_output import redact_spark_output
 
 DAGS_DIR = Path(__file__).resolve().parent
@@ -40,17 +40,18 @@ class SparkWorkload:
     runs_after: tuple[str, ...]
 
 
-def _validate_environment_config(environment: str, config_dir: str) -> None:
+def _validate_environment_config(environment: str, config_dir: str, product: str | None = None) -> None:
     """Validate the bundle version's environment YAML before Spark startup.
 
     Args:
         environment: Environment selected by the current Git bundle name.
         config_dir: Config directory from the parsed bundle version.
+        product: Data product of the bundle, if any; selects its config folder.
     """
     sys.path.insert(0, str(BUNDLE_ROOT / "notebooks" / "common"))
     from config_loader import load_environment_config
 
-    load_environment_config(environment, config_dir)
+    load_environment_config(environment, config_dir, product)
 
 
 def _normalize_workloads(workloads: Sequence[Mapping[str, Any]]) -> tuple[SparkWorkload, ...]:
@@ -249,6 +250,7 @@ def _create_spark_container(
     aws_region: str,
     broker_ca_host_path: str,
     broker_ca_container_path: str,
+    product: str = "",
     **context: object,
 ) -> dict[str, str]:
     """Start one reusable Spark container and mount the DAG bundle into it.
@@ -261,6 +263,7 @@ def _create_spark_container(
         bundle_target: Container path where the bundle is mounted.
         environment: Selected lakehouse environment.
         aws_region: AWS-compatible region passed to Spark applications.
+        product: Data product of the bundle (empty for legacy bundles).
         **context: Airflow task context, including the DAG and run IDs.
 
     Returns:
@@ -316,6 +319,7 @@ def _create_spark_container(
                 "SPARK_CONTAINER_ROLE": "driver",
                 "SPARK_MASTER_HOST": "spark",
                 "LAKEHOUSE_ENVIRONMENT": environment,
+                "LAKEHOUSE_PRODUCT": product,
                 "PYTHONPATH": bundle_target,
             },
             volumes=volumes,
@@ -454,6 +458,7 @@ def create_spark_dag(
     normalized_workloads = _normalize_workloads(workloads)
 
     dag_id_prefix, environment = identity_for_bundle(DAGS_DIR)
+    product = product_for_bundle(DAGS_DIR)
     workload_names = [workload.task_name for workload in normalized_workloads]
     spark_job_image = os.environ.get("LAKEHOUSE_SPARK_IMAGE", "airflow-spark-job:3.5.5_1.8.1")
     spark_master = os.environ.get("LAKEHOUSE_SPARK_MASTER", "local[*]")
@@ -479,7 +484,7 @@ def create_spark_dag(
     validate_environment = PythonOperator(
         task_id="validate_environment",
         python_callable=_validate_environment_config,
-        op_kwargs={"environment": environment, "config_dir": str(CONFIG_DIR)},
+        op_kwargs={"environment": environment, "config_dir": str(CONFIG_DIR), "product": product},
         dag=dag,
     )
     create_cluster = PythonOperator(
@@ -496,6 +501,7 @@ def create_spark_dag(
             "aws_region": aws_region,
             "broker_ca_host_path": broker_ca_host_path,
             "broker_ca_container_path": broker_ca_container_path,
+            "product": product or "",
         },
         dag=dag,
     )
