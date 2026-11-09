@@ -80,7 +80,7 @@ def start_spark_job(app_name: str, argv: Any = None) -> tuple[Any, EnvironmentCo
         # but the catalog selection is needed before SparkSession startup.
         # Airflow already mounts the selected Bundle, so use its config folder.
         config_dir = os.environ.get("LAKEHOUSE_BUNDLE_CONFIG_DIR", "/opt/lakehouse-bundle/configs")
-    # Set by the DAG factory for data product bundles; selects configs/<product>/ when present.
+    # Set on the Spark container for data product bundles; selects configs/<product>/ when present.
     config = load_environment_config(args.environment, config_dir, os.environ.get("LAKEHOUSE_PRODUCT") or None)
     _select_token_provider()
 
