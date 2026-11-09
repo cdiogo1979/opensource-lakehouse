@@ -189,7 +189,7 @@ def test_dag_factory_reuses_spark_container_for_bundle_workloads() -> None:
     factory = factory_path.read_text(encoding="utf-8")
 
     assert dag_path.is_file()
-    assert 'dag_name="init_environment"' in source
+    assert 'dag_name="test_environment"' in source
     assert '"task_name": "test_environment_first"' in source
     assert '"task_name": "test_environment_second"' in source
     assert '"task_name": "count_sample_rows"' in source
