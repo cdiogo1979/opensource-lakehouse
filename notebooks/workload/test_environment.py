@@ -7,9 +7,25 @@
 # only its dedicated synthetic smoke table.
 
 # %% [markdown]
+# ## Initialization
+#
+# Jupyter only: in `spark-submit` (Airflow) these two cells are comments.
+# 1. Install this repository's extra packages (`requirements.txt`). After the
+#    first install in a server session, restart the kernel, then run all cells.
+# 2. Find this clone, load its config and start Spark: `dev` by default; for
+#    another environment, run `%env LAKEHOUSE_ENVIRONMENT=uat` (or `prod`) first.
+#    It defines `spark` and `config`.
+
+# %%
+# !lakehouse-install-requirements ~/work/opensource-lakehouse
+
+# %%
+# %run ../common/jupyter_environment_resolver.py
+
+# %% [markdown]
 # ## Imports
 #
-# Jupyter start-up is delegated to `../common/jupyter_environment_resolver.py` below. In a regular
+# In Jupyter, the Initialization cells above start Spark. In a regular
 # `spark-submit` run, the DAG supplies the repository root on `PYTHONPATH`.
 
 # %%
@@ -24,18 +40,6 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-
-# %% [markdown]
-# ## Select the environment and start Spark
-#
-# In a Jupyter kernel, the resolver uses `dev` unless `LAKEHOUSE_ENVIRONMENT` is
-# set to `uat` or `prod` first, for example with `%env LAKEHOUSE_ENVIRONMENT=uat`
-# (a new environment needs a kernel restart). The `%run` line is a Jupytext
-# magic: it becomes active in Jupyter and remains a comment in this Python
-# script, so spark-submit skips it.
-
-# %%
-# %run ../common/jupyter_environment_resolver.py
 
 # %% [markdown]
 # ## Workload settings and operations

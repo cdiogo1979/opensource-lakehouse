@@ -17,7 +17,7 @@ This is a lakehouse **data product repository**. [README.md](README.md) is the c
 - **Entry points**:
   - use `notebooks.common.job_runtime.start_spark_job(app_name)` for the config and the Spark session, and declare task arguments for `notebooks.common.cli.parse_task_args(...)` (workflow `args` after `--` in Airflow, widgets or `TASK_ARGS` in Jupyter; values are strings, never templated; check them in the job);
   - never configure Spark catalogs, tokens or redaction here: the platform's `lakehouse_spark` does that;
-  - in notebooks, run `%run ../common/jupyter_environment_resolver.py` (and `jupyter_input_widget_helper.py` after `WIDGET_LIST`);
+  - start every notebook in `notebooks/workload/` with the Initialization section (after the title cell): `# !lakehouse-install-requirements ~/work/opensource-lakehouse` and `# %run ../common/jupyter_environment_resolver.py`; use `jupyter_input_widget_helper.py` after `WIDGET_LIST` for task arguments;
   - keep run code under `if __name__ == "__main__":` and stop Spark in `finally:`.
 - **Configs**:
   - the loader accepts only `dev`, `uat` and `prod`, requires `storage_path` and `database_name`, and never falls back across environments;

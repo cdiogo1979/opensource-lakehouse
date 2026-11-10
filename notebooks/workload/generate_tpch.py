@@ -8,10 +8,26 @@
 #
 # In Airflow, `workflows/generate_tpch.json` runs it once per entity with
 # `--entity <name>` after `--`; `--scale-factor` is optional (default 0.01).
-# In Jupyter, run `lakehouse-install-requirements` once per server start and
-# restart the kernel; then run the widget cell below, fill in `entity` (and,
+# In Jupyter, run the Initialization cells (and restart the kernel after the
+# first install); then run the widget cell below, fill in `entity` (and,
 # optionally, `scale_factor`), and run the remaining cells. DuckDB downloads its
 # `tpch` extension the first time it is used, so the first run needs network access.
+
+# %% [markdown]
+# ## Initialization
+#
+# Jupyter only: in `spark-submit` (Airflow) these two cells are comments.
+# 1. Install this repository's extra packages (`requirements.txt`). After the
+#    first install in a server session, restart the kernel, then run all cells.
+# 2. Find this clone, load its config and start Spark: `dev` by default; for
+#    another environment, run `%env LAKEHOUSE_ENVIRONMENT=uat` (or `prod`) first.
+#    It defines `spark` and `config`.
+
+# %%
+# !lakehouse-install-requirements ~/work/opensource-lakehouse
+
+# %%
+# %run ../common/jupyter_environment_resolver.py
 
 # %%
 import logging

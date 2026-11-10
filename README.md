@@ -185,6 +185,7 @@ arguments = parse_task_args(TASK_ARGUMENTS)     # {"date": "2026-11-10", "mode":
 
   `cli.task_args()` still returns the raw list (after `--`, or `TASK_ARGS` in Jupyter). Arguments are passed as a list and never go through a shell.
 - **Environment variables** set in the Airflow container: `LAKEHOUSE_ENVIRONMENT` (`prod` or `uat`), `LAKEHOUSE_PRODUCT` (for example `default`), and `PYTHONPATH=/opt/lakehouse-bundle`, so `notebooks.common` imports work.
+- **Start every notebook with the Initialization section** (see [Working in Jupyter](#working-in-jupyter)): `# !lakehouse-install-requirements ~/work/opensource-lakehouse` and `# %run ../common/jupyter_environment_resolver.py`, right after the title cell. CI checks that every file in `notebooks/workload/` has it.
 - **Stop Spark at the end**: call `spark.stop()` in a `finally:` block. Put the run code under `if __name__ == "__main__":` so tests and notebooks can import the file without starting Spark.
 - **Packages**: entry points run on the platform's Python 3.10 environment plus this repository's `requirements.txt`; see [Python packages](#python-packages).
 
@@ -231,9 +232,24 @@ Workload code runs on one Python environment, the same in Airflow's Spark contai
 
 1. Sign in to JupyterHub (<http://jupyterhub.localhost:8000>) with your platform account. You need to be a developer or analyst of the product.
 2. Clone this repository into your workspace and open a file from `notebooks/workload/` as a notebook. Jupytext reads the `py:percent` format.
-3. Run the cells. `# %run ../common/jupyter_environment_resolver.py` finds the clone that holds the notebook, selects `dev`, and starts Spark with **your own** identity, so you see and write only what your groups allow (for a developer, read in `prod` and `uat`, write in `dev`). It defines `spark` and `config`.
+3. Run the **Initialization** section at the top of the notebook. Every notebook starts with it:
 
-**Another environment**: run `%env LAKEHOUSE_ENVIRONMENT=uat` (or `prod`) before the resolver. A kernel that already has a session needs a restart to switch.
+   ```python
+   # %%
+   # !lakehouse-install-requirements ~/work/opensource-lakehouse
+
+   # %%
+   # %run ../common/jupyter_environment_resolver.py
+   ```
+
+   In the `.py` file both lines are comments (Jupytext's convention), so `spark-submit` in Airflow skips them; opened in Jupyter they become a shell command and a `%run`.
+   - The first cell installs this repository's `requirements.txt` extras. **After the first install in a server session, restart the kernel** and run all cells; later runs print `Nothing to add`.
+   - The second cell finds the clone that holds the notebook, selects `dev`, and starts Spark with **your own** identity, so you see and write only what your groups allow (for a developer, read in `prod` and `uat`, write in `dev`). It defines `spark` and `config`.
+4. Run the rest of the notebook.
+
+The path `~/work/opensource-lakehouse` assumes the clone is in `~/work`, as in step 2; adjust it if you cloned elsewhere.
+
+**Another environment**: run `%env LAKEHOUSE_ENVIRONMENT=uat` (or `prod`) before the Initialization section. A kernel that already has a session needs a restart to switch.
 
 **Task arguments as widgets**: list the job's arguments, then run the widget helper; fill in the fields and run the job's cells:
 
@@ -246,7 +262,7 @@ WIDGET_LIST = ["entity", "scale_factor"]
 
 **The kernel**: the only kernel is **Lakehouse (Python 3.10)**, with the same packages as Airflow runs. Notebooks saved with an older kernel open with it.
 
-**This repository's extras** (`requirements.txt`): open a terminal in JupyterLab (or use `!` in a cell), then restart the kernel:
+**This repository's extras** (`requirements.txt`): the Initialization section installs them; you can also run the command in a JupyterLab terminal, then restart the kernel:
 
 ```bash
 cd ~/work/opensource-lakehouse        # your clone
@@ -255,7 +271,7 @@ lakehouse-install-requirements        # or: lakehouse-install-requirements path/
 
 The packages go to `~/.local/lakehouse/python3.10`, which lasts only for the current server session (only `~/work` is kept across restarts): **rerun the command after every server start**. Running the command for another repository adds its packages too. When the platform's lock changes, the command asks you to rerun it with `--reset`, which empties that folder first.
 
-**TPC-H in a notebook**: open `notebooks/workload/generate_tpch.py`, run the cells up to the widgets, type an entity (for example `orders`), and run the remaining cells.
+**TPC-H in a notebook**: open `notebooks/workload/generate_tpch.py`, run the Initialization section and the cells up to the widgets, type an entity (for example `orders`), and run the remaining cells.
 
 `workflows/` and `dags/` play no part in Jupyter. An entry point that works in Jupyter with `dev` should behave the same in Airflow with `uat` and `prod`, apart from data and permissions.
 

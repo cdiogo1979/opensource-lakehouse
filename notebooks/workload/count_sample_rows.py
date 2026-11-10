@@ -2,14 +2,30 @@
 # # Count rows in the sample Iceberg table
 #
 # This Jupytext `py:percent` notebook checks the smoke table created by
-# `init_environment.py`. It is read-only and logs the selected environment,
+# `test_environment.py`. It is read-only and logs the selected environment,
 # table, and row count.
+
+# %% [markdown]
+# ## Initialization
+#
+# Jupyter only: in `spark-submit` (Airflow) these two cells are comments.
+# 1. Install this repository's extra packages (`requirements.txt`). After the
+#    first install in a server session, restart the kernel, then run all cells.
+# 2. Find this clone, load its config and start Spark: `dev` by default; for
+#    another environment, run `%env LAKEHOUSE_ENVIRONMENT=uat` (or `prod`) first.
+#    It defines `spark` and `config`.
+
+# %%
+# !lakehouse-install-requirements ~/work/opensource-lakehouse
+
+# %%
+# %run ../common/jupyter_environment_resolver.py
 
 # %% [markdown]
 # ## Start Spark and load the environment configuration
 #
-# In Jupyter, the environment resolver selects `dev` (or `LAKEHOUSE_ENVIRONMENT`)
-# and exposes `spark` and `config`. In Airflow, `spark-submit` starts the session using the
+# In Jupyter, the Initialization cells above select `dev` (or
+# `LAKEHOUSE_ENVIRONMENT`) and expose `spark` and `config`. In Airflow, `spark-submit` starts the session using the
 # environment and config directory passed by the DAG.
 
 # %%
@@ -24,9 +40,6 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-
-# %%
-# %run ../common/jupyter_environment_resolver.py
 
 # %% [markdown]
 # ## Count the table rows

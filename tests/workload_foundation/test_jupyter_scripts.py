@@ -49,3 +49,15 @@ def test_entry_points_run_the_scripts_from_common():
         assert "jupyter_helper" not in text
         assert "# %run ./" not in text
     assert not (REPOSITORY_ROOT / "notebooks/workload/jupyter_helper.py").exists()
+
+
+INITIALIZATION = ["# !lakehouse-install-requirements ~/work/opensource-lakehouse", "# %run ../common/jupyter_environment_resolver.py"]
+
+
+def test_every_notebook_starts_with_the_initialization_section():
+    """CR-4: the first code cells of each notebook install the extras and run the resolver."""
+    for path in sorted((REPOSITORY_ROOT / "notebooks/workload").glob("*.py")):
+        cells = [cell.strip() for cell in path.read_text().split("# %%")[1:]]
+        code = [cell for cell in cells if not cell.startswith("[markdown]")]
+        assert code[:2] == INITIALIZATION, path.name
+        assert cells[1].startswith("[markdown]\n# ## Initialization"), path.name
