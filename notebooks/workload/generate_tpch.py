@@ -8,12 +8,12 @@
 #
 # In Airflow, `workflows/generate_tpch.json` runs it once per entity with
 # `--entity <name>` after `--`; `--scale-factor` is optional (default 0.01).
-# In Jupyter, run `lakehouse-install-requirements` once, restart the kernel, and
-# set `ENTITY` and `SCALE_FACTOR` below. DuckDB downloads its `tpch` extension
-# the first time it is used, so the first run needs network access.
+# In Jupyter, run `lakehouse-install-requirements` once per server start and
+# restart the kernel; then run the widget cell below, fill in `entity` (and,
+# optionally, `scale_factor`), and run the remaining cells. DuckDB downloads its
+# `tpch` extension the first time it is used, so the first run needs network access.
 
 # %%
-import argparse
 import logging
 import sys
 from decimal import Decimal, InvalidOperation
@@ -25,13 +25,19 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 # %% [markdown]
-# ## Settings for Jupyter
+# ## Task arguments
 #
-# Airflow passes these as task arguments instead.
+# The same declaration serves both places: Airflow passes the workflow's `args`
+# (`--entity orders`); in Jupyter the input widgets below hold the values (or a
+# `TASK_ARGS` list, when there are no widgets). The common parser only reads them;
+# this notebook checks them (`check_arguments`).
 
 # %%
-ENTITY = "lineitem"
-SCALE_FACTOR = "0.01"
+TASK_ARGUMENTS = {"entity": {"required": True}, "scale_factor": {"default": "0.01"}}
+WIDGET_LIST = ["entity", "scale_factor"]
+
+# %%
+# %run ../common/jupyter_input_widget_helper.py
 
 # %% [markdown]
 # ## TPC-H rules
@@ -105,20 +111,22 @@ def check_count(entity: str, scale_factor: Decimal, count: int, orders_count: in
         raise RuntimeError(f"TPC-H {entity} at scale factor {scale_factor}: {count} rows, expected {expected}")
 
 
-def parse_task_args(args: list) -> tuple:
-    """The entity and scale factor from the workflow task's arguments (after ``--``).
+def check_arguments(arguments: dict) -> tuple:
+    """The entity and the scale factor from the parsed task arguments, checked against the TPC-H rules.
 
-    Exits with status 2 and a usage message for invalid arguments.
+    Args:
+        arguments: The mapping from ``parse_task_args(TASK_ARGUMENTS)``.
+
+    Returns:
+        ``(entity, scale_factor)``.
+
+    Raises:
+        ValueError: The entity is not a TPC-H entity, or the scale factor breaks ``parse_scale_factor``.
     """
-    parser = argparse.ArgumentParser(prog="generate_tpch.py", description="Generate TPC-H data and count one entity.")
-    parser.add_argument("--entity", required=True, choices=ENTITIES)
-    parser.add_argument("--scale-factor", default="0.01")
-    parsed = parser.parse_args(args)
-    try:
-        scale_factor = parse_scale_factor(parsed.scale_factor)
-    except ValueError as error:
-        parser.error(str(error))
-    return parsed.entity, scale_factor
+    entity = arguments["entity"]
+    if entity not in ENTITIES:
+        raise ValueError(f"unknown TPC-H entity {entity!r}; expected one of {', '.join(ENTITIES)}")
+    return entity, parse_scale_factor(arguments["scale_factor"])
 
 
 # %% [markdown]
@@ -150,10 +158,13 @@ def generate_tpch(entity: str, scale_factor: Decimal) -> int:
 # %%
 if __name__ == "__main__":
     # Importing this workload from pytest must not parse the caller's arguments.
-    if "ipykernel" in sys.modules:
-        entity, scale_factor = ENTITY, parse_scale_factor(SCALE_FACTOR)
-    else:
-        from notebooks.common.cli import task_args
+    from notebooks.common.cli import parse_task_args
 
-        entity, scale_factor = parse_task_args(task_args())
+    try:
+        entity, scale_factor = check_arguments(parse_task_args(TASK_ARGUMENTS, prog="generate_tpch.py"))
+    except ValueError as error:
+        if "ipykernel" in sys.modules:
+            raise
+        print(f"generate_tpch.py: {error}", file=sys.stderr)
+        raise SystemExit(2) from None
     generate_tpch(entity, scale_factor)

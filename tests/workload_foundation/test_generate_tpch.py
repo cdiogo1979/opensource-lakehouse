@@ -8,7 +8,9 @@ from pathlib import Path
 import pytest
 from hypothesis import given, seed, settings, strategies as st
 
-from generate_tpch import BASE_COUNTS, ENTITIES, check_count, expected_count, generate_tpch, parse_scale_factor, parse_task_args
+from generate_tpch import BASE_COUNTS, ENTITIES, TASK_ARGUMENTS, WIDGET_LIST, check_arguments, check_count, expected_count, generate_tpch, parse_scale_factor
+
+from notebooks.common.cli import parse_task_args
 
 HYPOTHESIS_SEED = int(os.environ.get("HYPOTHESIS_SEED", "0"))
 REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
@@ -17,12 +19,15 @@ COUNTS_AT_0_01 = {"region": 5, "nation": 25, "supplier": 100, "customer": 1500, 
 
 
 def test_task_arguments_need_an_entity_and_default_to_scale_factor_0_01():
-    assert parse_task_args(["--entity", "orders"]) == ("orders", Decimal("0.01"))
-    assert parse_task_args(["--entity", "lineitem", "--scale-factor", "0.1"]) == ("lineitem", Decimal("0.1"))
-    for args in ([], ["--entity", "lineitems"], ["--entity", "orders", "--scale-factor", "2"]):
-        with pytest.raises(SystemExit) as error:
-            parse_task_args(args)
-        assert error.value.code == 2
+    assert check_arguments(parse_task_args(TASK_ARGUMENTS, ["--entity", "orders"])) == ("orders", Decimal("0.01"))
+    assert check_arguments(parse_task_args(TASK_ARGUMENTS, ["--entity", "lineitem", "--scale-factor", "0.1"])) == ("lineitem", Decimal("0.1"))
+    with pytest.raises(SystemExit) as error:
+        parse_task_args(TASK_ARGUMENTS, [])
+    assert error.value.code == 2
+    for args in (["--entity", "lineitems"], ["--entity", "orders", "--scale-factor", "2"]):
+        with pytest.raises(ValueError):  # the notebook's own checks; the common parser doesn't check values
+            check_arguments(parse_task_args(TASK_ARGUMENTS, args))
+    assert WIDGET_LIST == list(TASK_ARGUMENTS)
 
 
 @pytest.mark.parametrize("text", ["0", "-0.01", "1.001", "0.0005", "0.0101", "abc", "NaN", "Infinity", ""])

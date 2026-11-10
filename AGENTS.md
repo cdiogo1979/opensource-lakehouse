@@ -5,7 +5,7 @@ This is a lakehouse **data product repository**. [README.md](README.md) is the c
 ## What belongs here
 - `workflows/<name>.json`: Airflow DAG declarations (workflow JSON v1, see the README). This is the only way to declare DAGs.
 - `notebooks/workload/*.py`: Spark entry points in Jupytext `py:percent` format, runnable by `spark-submit` and as notebooks.
-- `notebooks/common/`: shared helpers (`config_loader.py`, `cli.py`, `job_runtime.py`), used by Airflow runs and Jupyter.
+- `notebooks/common/`: shared helpers (`config_loader.py`, `cli.py`, `job_runtime.py`), used by Airflow runs and Jupyter, and the Jupyter `%run` scripts `jupyter_environment_resolver.py` and `jupyter_input_widget_helper.py`.
 - `configs/<env>.yml` and optional `configs/<product>/<env>.yml`: non-secret settings for `prod`, `uat`, `dev`.
 - `dags/lakehouse.py`: the platform stub. **Never edit it, and never add files to `dags/`.**
 - `requirements.txt`: optional extra Python packages for the workload code, installed by the platform at each Airflow run and with `lakehouse-install-requirements` in Jupyter.
@@ -15,7 +15,9 @@ This is a lakehouse **data product repository**. [README.md](README.md) is the c
 - **No DAG code**: don't write Airflow DAG code, operators, or a DAG factory here. The lakehouse platform's `lakehouse_dags` package builds the DAGs from `workflows/*.json`. DAG IDs are `<bundle>-<name>` and must not be set or changed in this repository.
 - **Valid workflows**: keep every workflow file valid. One invalid file blocks all of the bundle's DAGs in Airflow. CI runs `lakehouse-validate-workflows .`. Unknown fields are refused, `name` must equal the file name, and `entrypoint` must exist in `notebooks/workload/`.
 - **Entry points**:
-  - use `notebooks.common.job_runtime.start_spark_job(app_name)` for the config and the Spark session, and `notebooks.common.cli.task_args()` for workflow `args` (passed after `--`, never templated);
+  - use `notebooks.common.job_runtime.start_spark_job(app_name)` for the config and the Spark session, and declare task arguments for `notebooks.common.cli.parse_task_args(...)` (workflow `args` after `--` in Airflow, widgets or `TASK_ARGS` in Jupyter; values are strings, never templated; check them in the job);
+  - never configure Spark catalogs, tokens or redaction here: the platform's `lakehouse_spark` does that;
+  - in notebooks, run `%run ../common/jupyter_environment_resolver.py` (and `jupyter_input_widget_helper.py` after `WIDGET_LIST`);
   - keep run code under `if __name__ == "__main__":` and stop Spark in `finally:`.
 - **Configs**:
   - the loader accepts only `dev`, `uat` and `prod`, requires `storage_path` and `database_name`, and never falls back across environments;

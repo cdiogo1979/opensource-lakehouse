@@ -8,8 +8,8 @@
 # %% [markdown]
 # ## Start Spark and load the environment configuration
 #
-# In Jupyter, the helper selects the `dev` configuration and exposes `spark`
-# and `config`. In Airflow, `spark-submit` starts the session using the
+# In Jupyter, the environment resolver selects `dev` (or `LAKEHOUSE_ENVIRONMENT`)
+# and exposes `spark` and `config`. In Airflow, `spark-submit` starts the session using the
 # environment and config directory passed by the DAG.
 
 # %%
@@ -26,7 +26,7 @@ logger = logging.getLogger(__name__)
 
 
 # %%
-# %run ./jupyter_helper.py
+# %run ../common/jupyter_environment_resolver.py
 
 # %% [markdown]
 # ## Count the table rows
@@ -59,10 +59,8 @@ def count_sample_rows(spark: Any, config: Mapping[str, Any]) -> int:
 # ## Run the count and stop Spark
 
 # %%
-if __name__ == "__main__" and "airflow" not in sys.modules:
-    # Airflow's bundle parser scans repository Python files as well as dags/;
-    # it may execute this module as __main__, but must never invoke the Spark
-    # CLI parser while discovering DAGs.
+if __name__ == "__main__":
+    # Importing this workload from pytest must not start Spark or parse arguments.
     if "ipykernel" not in sys.modules:
         from notebooks.common.job_runtime import start_spark_job
 

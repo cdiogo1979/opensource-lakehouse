@@ -9,7 +9,7 @@
 # %% [markdown]
 # ## Imports
 #
-# Jupyter startup is delegated to `jupyter_helper.py` below. In a regular
+# Jupyter start-up is delegated to `../common/jupyter_environment_resolver.py` below. In a regular
 # `spark-submit` run, the DAG supplies the repository root on `PYTHONPATH`.
 
 # %%
@@ -28,13 +28,14 @@ logger = logging.getLogger(__name__)
 # %% [markdown]
 # ## Select the environment and start Spark
 #
-# In a Jupyter kernel, set `LAKEHOUSE_ENVIRONMENT` to `dev`, `uat`, or `prod`
-# before running the helper; it presets `dev`. The `%run` line is a Jupytext
+# In a Jupyter kernel, the resolver uses `dev` unless `LAKEHOUSE_ENVIRONMENT` is
+# set to `uat` or `prod` first, for example with `%env LAKEHOUSE_ENVIRONMENT=uat`
+# (a new environment needs a kernel restart). The `%run` line is a Jupytext
 # magic: it becomes active in Jupyter and remains a comment in this Python
-# script, so Spark-submit skips it.
+# script, so spark-submit skips it.
 
 # %%
-# %run ./jupyter_helper.py
+# %run ../common/jupyter_environment_resolver.py
 
 # %% [markdown]
 # ## Workload settings and operations

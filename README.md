@@ -67,13 +67,14 @@ dags/
 notebooks/
   common/                  Shared helpers for Airflow runs and Jupyter:
     config_loader.py         load and validate configs/<env>.yml (and configs/<product>/<env>.yml)
-    cli.py                   --environment, --config-dir, and task arguments after --
-    job_runtime.py           start_spark_job(): config plus a catalog-ready Spark session
+    cli.py                   --environment, --config-dir, task arguments (parse_task_args)
+    job_runtime.py           start_spark_job(): config, then the platform's Spark session
+    jupyter_environment_resolver.py   Jupyter start-up: the clone, the environment, spark and config (%run)
+    jupyter_input_widget_helper.py    Jupyter input widgets for a job's task arguments (%run)
   workload/                Spark jobs (Jupytext py:percent files, also notebooks)
     test_environment.py      creates the smoke table
     count_sample_rows.py     counts its rows
     generate_tpch.py         generates TPC-H data with DuckDB and checks one entity's row count
-    jupyter_helper.py        Jupyter start-up (dev settings)
 configs/                   Non-secret settings: dev.yml, uat.yml, prod.yml, optional <product>/<env>.yml
 tests/                     pytest and Hypothesis tests for the helpers and workloads
 scripts/code_quality.sh    lint, flake8, bandit (used by CI)
@@ -162,18 +163,27 @@ spark-submit --master local[*] /opt/lakehouse-bundle/notebooks/workload/<entrypo
 Use the shared helpers rather than parsing `sys.argv` yourself:
 
 ```python
-from notebooks.common.cli import task_args
+from notebooks.common.cli import parse_task_args
 from notebooks.common.job_runtime import start_spark_job
 
+TASK_ARGUMENTS = {"date": {"required": True}, "mode": {"default": "append"}}
+
 spark, config = start_spark_job("load_sales")  # reads --environment and --config-dir; dev in Jupyter
-extra = task_args()                             # the workflow task's "args"; [] in Jupyter
+arguments = parse_task_args(TASK_ARGUMENTS)     # {"date": "2026-11-10", "mode": "append"}
 ```
 
+- **Who does what**: the platform starts the Spark session (the Polaris catalogs, your run's or your own token, redaction) with its `lakehouse_spark` module, which both platform images provide. This repository keeps its configuration: every key of `configs/<env>.yml` reaches the job.
 - **`start_spark_job(app_name)`**:
   - parses `--environment` and `--config-dir`, or in Jupyter uses `LAKEHOUSE_ENVIRONMENT` (default `dev`);
-  - loads the config, preferring the product folder (see below);
-  - returns `(spark, config)` with the Iceberg catalogs and token handling configured.
-- **Arguments**: `cli.parse_args()` returns the same values plus `task_args`, and `cli.task_args()` returns only the arguments after the first `--`, unchanged. Arguments are passed as a list and never go through a shell.
+  - loads the config (in Airflow, preferring the product folder; see below);
+  - asks the platform for the session with the config's `catalog_name`, and returns `(spark, config)`. The Spark application is `<env>-<app_name>`.
+- **Task arguments**: declare them once and read them with `parse_task_args(declaration)`:
+  - **declaration**: each name maps to `{"required": True}`, `{"default": "<text>"}` or `{}`; `date` is the option `--date`, `scale_factor` is `--scale-factor`;
+  - **sources**: the workflow task's `args` (after `--`) in Airflow; in Jupyter the [input widgets](#working-in-jupyter), else a `TASK_ARGS` list in the notebook;
+  - **values are strings**, never converted or checked: check them in the job (as `generate_tpch.py` does);
+  - **structural errors** (an unknown option, a missing required one, an option given twice or without a value) are reported together with the usage: the task exits with status 2 in Airflow, and the cell raises `TaskArgumentError` in Jupyter.
+
+  `cli.task_args()` still returns the raw list (after `--`, or `TASK_ARGS` in Jupyter). Arguments are passed as a list and never go through a shell.
 - **Environment variables** set in the Airflow container: `LAKEHOUSE_ENVIRONMENT` (`prod` or `uat`), `LAKEHOUSE_PRODUCT` (for example `default`), and `PYTHONPATH=/opt/lakehouse-bundle`, so `notebooks.common` imports work.
 - **Stop Spark at the end**: call `spark.stop()` in a `finally:` block. Put the run code under `if __name__ == "__main__":` so tests and notebooks can import the file without starting Spark.
 - **Packages**: entry points run on the platform's Python 3.10 environment plus this repository's `requirements.txt`; see [Python packages](#python-packages).
@@ -182,7 +192,7 @@ extra = task_args()                             # the workflow task's "args"; []
 
 Workload code runs on one Python environment, the same in Airflow's Spark containers and in the Jupyter kernel: **Python 3.10** with the platform's pinned packages, and PySpark 3.5.5 from the Spark installation.
 
-- **The platform's packages**: PyYAML, requests, pandas, numpy, pyarrow, ipykernel and jupytext, with their dependencies, at versions fixed by the platform's lock (`infra/workload-python/requirements.lock` in the platform repository). Other packages are not available unless this repository asks for them.
+- **The platform's packages**: PyYAML, requests, pandas, numpy, pyarrow, ipykernel, jupytext and ipywidgets, with their dependencies, at versions fixed by the platform's lock (`infra/workload-python/requirements.lock` in the platform repository). Other packages are not available unless this repository asks for them.
 - **This repository's extras**: list them in `requirements.txt` at the repository root, one plain requirement per line, for example:
 
   ```text
@@ -206,13 +216,14 @@ Workload code runs on one Python environment, the same in Airflow's Spark contai
 |---|---|---|
 | `prod` | Airflow, bundle `<product>-main` | `configs/<product>/prod.yml`, else `configs/prod.yml` |
 | `uat` | Airflow, bundle `<product>-uat` | `configs/<product>/uat.yml`, else `configs/uat.yml` |
-| `dev` | Jupyter only | `configs/<product>/dev.yml`, else `configs/dev.yml` |
+| `dev` | Jupyter only | `configs/dev.yml` |
 
 - **Required keys**: `storage_path` (for example `s3a://bucket-default/`, ending with `/`) and `database_name`, the product's namespace for that environment, for example `default_lh`, `default_lhuat` or `default_lhdev`.
   - **Usually present**: `catalog_name` (`lakehouse`, `lakehouse_uat` or `lakehouse_dev`).
   - **Other keys**: any other keys, including nested ones, are passed through to the job as read-only values.
 - **Strict loading**: the loader refuses unknown environment names and never falls back from one environment to another. A missing file fails `validate_environment` before any task runs.
-- **One repository, several products**: put each product's settings in `configs/<product>/`. The `configs/<env>.yml` files are the fallback.
+- **One repository, several products**: put each product's settings in `configs/<product>/`; Airflow uses them (the platform sets the product from the bundle). The `configs/<env>.yml` files are the fallback, and the only files Jupyter reads.
+- **Your own settings**: add any keys you need, for example a source dataset that differs between `dev`, `uat` and `prod`; jobs read them from `config`.
 - **The values must match the platform**: they have to be the product's namespaces and buckets from the platform's data product file. Access to anything else is refused by Polaris.
 - **No secrets**: never put credentials, tokens or endpoints in configs.
 
@@ -220,7 +231,18 @@ Workload code runs on one Python environment, the same in Airflow's Spark contai
 
 1. Sign in to JupyterHub (<http://jupyterhub.localhost:8000>) with your platform account. You need to be a developer or analyst of the product.
 2. Clone this repository into your workspace and open a file from `notebooks/workload/` as a notebook. Jupytext reads the `py:percent` format.
-3. Run the cells. `# %run ./jupyter_helper.py` finds the repository root, selects `dev`, and starts Spark with **your own** identity, so you see and write only what your groups allow (for a developer, read in `prod` and `uat`, write in `dev`).
+3. Run the cells. `# %run ../common/jupyter_environment_resolver.py` finds the clone that holds the notebook, selects `dev`, and starts Spark with **your own** identity, so you see and write only what your groups allow (for a developer, read in `prod` and `uat`, write in `dev`). It defines `spark` and `config`.
+
+**Another environment**: run `%env LAKEHOUSE_ENVIRONMENT=uat` (or `prod`) before the resolver. A kernel that already has a session needs a restart to switch.
+
+**Task arguments as widgets**: list the job's arguments, then run the widget helper; fill in the fields and run the job's cells:
+
+```python
+WIDGET_LIST = ["entity", "scale_factor"]
+# %run ../common/jupyter_input_widget_helper.py
+```
+
+`parse_task_args` reads the fields (an empty field is "not given"); running the helper again keeps what you typed. Without widgets, it reads a `TASK_ARGS` list instead, for example `TASK_ARGS = ["--entity", "orders"]`.
 
 **The kernel**: the only kernel is **Lakehouse (Python 3.10)**, with the same packages as Airflow runs. Notebooks saved with an older kernel open with it.
 
@@ -233,7 +255,7 @@ lakehouse-install-requirements        # or: lakehouse-install-requirements path/
 
 The packages go to `~/.local/lakehouse/python3.10`, which lasts only for the current server session (only `~/work` is kept across restarts): **rerun the command after every server start**. Running the command for another repository adds its packages too. When the platform's lock changes, the command asks you to rerun it with `--reset`, which empties that folder first.
 
-**TPC-H in a notebook**: open `notebooks/workload/generate_tpch.py`, set `ENTITY` and `SCALE_FACTOR`, and run all cells.
+**TPC-H in a notebook**: open `notebooks/workload/generate_tpch.py`, run the cells up to the widgets, type an entity (for example `orders`), and run the remaining cells.
 
 `workflows/` and `dags/` play no part in Jupyter. An entry point that works in Jupyter with `dev` should behave the same in Airflow with `uat` and `prod`, apart from data and permissions.
 
@@ -264,7 +286,7 @@ CI doesn't deploy anything: Airflow picks up merged changes from Git by itself.
 4. Merge. Within about 5 minutes Airflow shows `<product>-uat-<name>`; run it there.
 5. Open a pull request from `uat` into `main`. After the merge, `<product>-main-<name>` appears.
 
-**Add a task with arguments and retries**: add an entry to `tasks` with `args`, `retries` and, optionally, `retry_delay_seconds`. Read the arguments with `task_args()`.
+**Add a task with arguments and retries**: add an entry to `tasks` with `args`, `retries` and, optionally, `retry_delay_seconds`. Declare them in the entry point and read them with `parse_task_args(...)`.
 
 **Add a Python package**:
 1. Add `<package>==<version>` to `requirements.txt`, and check that the package has a Linux aarch64 wheel for CPython 3.10 (on PyPI, the file list of that version).
