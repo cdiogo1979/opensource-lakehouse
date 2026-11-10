@@ -1,0 +1,26 @@
+{
+  "apiVersion": "lakehouse.local/workflow/v1",
+  "name": "test_environment",
+  "description": "Create the smoke table twice, then count its rows, in one Spark container.",
+  "schedule": null,
+  "tasks": [
+    {
+      "name": "test_environment_first",
+      "entrypoint": "test_environment.py"
+    },
+    {
+      "name": "test_environment_second",
+      "entrypoint": "test_environment.py",
+      "runs_after": [
+        "test_environment_first"
+      ]
+    },
+    {
+      "name": "count_sample_rows",
+      "entrypoint": "count_sample_rows.py",
+      "runs_after": [
+        "test_environment_first"
+      ]
+    }
+  ]
+}

@@ -1,114 +1,250 @@
 # Open Source Lakehouse Workloads
 
-This repository contains environment-configured PySpark workloads and Airflow DAGs for a lakehouse using Apache Iceberg, a Nessie-compatible catalog, and S3-compatible object storage. Airflow reads versioned code from Git DAG Bundles and runs Spark jobs in Docker containers. Jenkins checks changes; it does not deploy or copy workload files into Airflow.
+This repository is a **data product repository**. It holds a product's Spark code, its environment settings, and the declarations of its Airflow workflows. It doesn't hold any DAG-building logic, infrastructure, or credentials: the lakehouse platform turns the workflow declarations into Airflow DAGs, runs them in Spark containers, and gives each run its product's write credentials.
 
-## Architecture
+The same code runs in two places:
+- **Airflow**: scheduled or manual runs of the production (`main`) and UAT (`uat`) branches.
+- **Jupyter**: interactive development with the `dev` settings.
 
-```mermaid
-flowchart LR
-    Repo[Git repository\nDAGs, configs, workloads] -->|Git DAG Bundles\nversioned refs| Airflow[Airflow 3\nDAG processor, scheduler, task execution]
-    Jenkins[Jenkins CI] -->|compile and unit tests| Repo
-    Operator[Operator] -->|select dev tracking ref| Client[Bundle client]
-    Client -->|deployment apply command| Airflow
-    Airflow -->|Docker API via accessible daemon| Spark[Spark job container\nreused during one DAG run]
-    Repo -. pinned bundle checkout mounted read-only .-> Spark
-    Spark -->|Iceberg catalog operations| Nessie[Nessie-compatible catalog]
-    Spark -->|S3A reads and writes| Storage[S3-compatible object storage\nfor example RustFS]
-    Jupyter[Optional Jupyter environment] -->|interactive development| Spark
-```
+**Contents**
+1. [What lives where](#what-lives-where)
+2. [How a run works](#how-a-run-works)
+3. [Repository layout](#repository-layout)
+4. [Workflow JSON reference](#workflow-json-reference)
+5. [The DAG stub](#the-dag-stub)
+6. [Writing an entry point](#writing-an-entry-point)
+7. [Configs and environments](#configs-and-environments)
+8. [Working in Jupyter](#working-in-jupyter)
+9. [CI in Jenkins](#ci-in-jenkins)
+10. [How-to](#how-to)
+11. [Limits](#limits)
 
-For each DAG run, Airflow validates the selected environment config, starts a Spark container, and mounts the same pinned bundle revision into it. Each workload is submitted as a separate `spark-submit` application. The DAG's `runs_after` declarations define ordering and parallel branches. A cleanup task removes the container after the workload tasks finish, including when a task fails.
+## What lives where
 
-The Spark setup currently uses `local[*]` inside one container. It does not provision a distributed Spark master and worker cluster. Jupyter is optional for interactive development; production execution is driven by Airflow.
-
-## Infrastructure required
-
-| Component | Requirement |
+| This repository | The lakehouse platform |
 |---|---|
-| Git hosting | Repository reachable by Airflow's Git DAG Bundle provider. The DAGs, config, and workload files must live in the same selected ref. |
-| Airflow | Airflow 3 deployment with compatible Git DAG Bundle support and configured bundle refresh/versioning. DAG processor, scheduler, and task execution components need the required provider/runtime dependencies. |
-| Bundle configuration | Three stable bundle names: `lakehouse-dev` tracks an operator-selected feature ref, `lakehouse-uat` tracks `uat`, and `lakehouse-prod` tracks `main`. Git authentication belongs in an Airflow connection or secrets backend. |
-| Docker access | The Airflow task execution environment needs the Docker SDK and access to a Docker daemon. The daemon must be able to see and mount the exact bundle checkout path passed by the task runner. Configure its endpoint and any shared Docker network. |
-| Spark job image | A Docker image with a compatible Spark/PySpark runtime, Iceberg and Nessie catalog integrations, S3A support, PyYAML, and the dependencies needed by the workloads. The image must be available to the Docker daemon. |
-| Catalog | A reachable Nessie-compatible catalog configured in the Spark runtime, with the namespaces and Iceberg tables addressed by the workload configs. |
-| Object storage | Reachable S3-compatible storage with a bucket/path matching `storage_path`, S3A support, and permissions for the Spark job identity. Configure the region and credentials through the runtime or an approved secret mechanism. |
-| CI | Jenkins or an equivalent CI runner with Python and the repository development dependencies to run compilation and unit tests. CI is not a deployment mechanism. |
-| Optional notebook environment | Jupyter with the Spark dependencies and network access to the same catalog and storage for interactive workload development. The included helper selects `dev` by default. |
+| `workflows/*.json`: which DAGs exist, their tasks, order, schedule, arguments, retries and timeouts | Turning each workflow into an Airflow DAG (the `lakehouse_dags` factory) |
+| `notebooks/workload/*.py`: the Spark jobs, also usable as notebooks | Starting one Spark container per DAG run, with this repository mounted read-only |
+| `notebooks/common/`: config loading, argument parsing, Spark session start-up | Issuing the product's short-lived write token to each run, through the token broker |
+| `configs/`: non-secret settings per environment (storage path, catalog, database) | The Git bundles that Airflow reads from this repository (`<product>-main`, `<product>-uat`) |
+| `dags/lakehouse.py`: a fixed two-line stub | The Jenkins jobs that check this repository, and the workflow validator they use |
 
-The sample DAG reads these Airflow environment settings:
+Nothing in this repository holds a password, key, or token, and nothing should.
 
-- `LAKEHOUSE_SPARK_IMAGE` (default: `airflow-spark-job:3.5.5_1.8.1`)
-- `LAKEHOUSE_SPARK_MASTER` (default: `local[*]`)
-- `LAKEHOUSE_DOCKER_URL` (default: `unix://var/run/docker.sock`)
-- `LAKEHOUSE_SPARK_DOCKER_NETWORK` (optional Docker network)
-- `AWS_REGION` (default: `us-east-1`)
+## How a run works
 
-Catalog endpoints, storage credentials, Git credentials, and deployment-specific bundle reload settings must be supplied by the platform. Do not commit secrets. The YAML files in `configs/` are examples and must point to the intended environment targets before running jobs; in particular, the UAT file calls out that its values are placeholders.
+1. **Bundles**: the platform's data product file names this repository in its `repo` block. Airflow then keeps two Git bundles of it:
+   - `<product>-main` tracks the production branch (`main` for `default`) and runs in environment `prod`;
+   - `<product>-uat` tracks the UAT branch (`uat`) and runs in environment `uat`.
 
-## Environment and bundle selection
+   Each bundle checks out `dags/`, `workflows/`, `notebooks/` and `configs/`, and refreshes about every 5 minutes.
+2. **DAGs**: Airflow parses `dags/lakehouse.py`, which asks the platform to build one DAG per `workflows/<name>.json`. The DAG ID is `<bundle>-<name>`, for example `default-uat-test_environment`. The platform's token broker relies on that prefix to pick the product's writer, so DAG IDs are never chosen in this repository.
+3. **Each DAG has the same fixed shape**:
 
-The repository keeps one non-secret YAML file per environment:
+   ```text
+   create_cluster ─▶ validate_environment ─▶ submit_<task> … (in runs_after order) ─▶ stop_cluster ─▶ verify_workloads_succeeded
+   ```
 
-- `configs/dev.yml`
-- `configs/uat.yml`
-- `configs/prod.yml`
-
-Each contains `storage_path` and `database_name`. The shared loader validates these required keys and makes additional YAML settings available to workloads. It rejects unsupported environment names instead of silently falling back to another config.
-
-The Git ref determines which version of DAGs, configs, and Spark code Airflow loads. The stable bundle name determines the runtime environment and DAG ID prefix:
-
-| Bundle name | Config | DAG ID prefix | Intended ref |
-|---|---|---|---|
-| `lakehouse-dev` | `dev.yml` | `dev-` | Operator-selected feature branch |
-| `lakehouse-uat` | `uat.yml` | `uat-` | `uat` |
-| `lakehouse-prod` or `lakehouse-main` | `prod.yml` | `main-` | `main` |
-| `<product>-uat` (data product bundle) | `<product>/uat.yml`, else `uat.yml` | `<product>-uat-` | the product's `uat_branch` |
-| `<product>-main` (data product bundle) | `<product>/prod.yml`, else `prod.yml` | `<product>-main-` | the product's `prod_branch` |
-
-The lakehouse platform creates one `<product>-main` and one `<product>-uat` bundle for every data product whose definition names this repository. Their DAG IDs start with the bundle name (for example `default-main-test_environment`); the platform's token broker derives the product's writer from that prefix and checks with Airflow that the DAG really comes from that bundle, so keep the prefix the factory builds. A product can keep its own settings in `configs/<product>/<env>.yml`; without one it uses the shared file.
-
-Changing the dev tracking ref lets an operator test a feature branch while retaining the dev config and DAG identity. Each DAG run uses its recorded bundle commit so its DAG, config, helpers, and workload code stay aligned. See [AIRFLOW_BUNDLES.md](AIRFLOW_BUNDLES.md) for setup, branch selection, and operational checks.
-
-## Solution design principles
-
-- **Keep environment settings out of workload code.** Environment YAML holds non-secret paths, database names, and other workload settings. Credentials and tokens come from the platform's connections or secrets backend.
-- **Version code and configuration together.** DAG Bundles provide a pinned repository revision for every run, avoiding mismatches between DAG definitions and Spark entrypoints.
-- **Keep DAG declarations small and reusable.** A declaration supplies a DAG name, schedule, and workload/task mappings. The shared DAG factory handles environment selection, config validation, Spark container lifecycle, submissions, dependencies, and cleanup.
-- **Make dependencies explicit.** Workloads without `runs_after` start independently after container creation. Named predecessors describe the DAG graph and permit parallel execution where dependencies allow it.
-- **Reuse runtime setup within a DAG run.** One Spark container receives the read-only bundle mount; multiple entrypoints run as separate Spark applications inside it.
-- **Keep workloads portable.** Spark jobs are Python files in Jupytext `py:percent` format. They support `spark-submit` and can be opened as notebooks; Jupyter-specific initialization is isolated in a helper.
-- **Limit side effects.** The environment initializer creates the configured namespace if missing and writes only the dedicated sample Iceberg table. Iceberg/Nessie garbage collection remains a platform operation because deleting files without reference-aware GC can affect other branches or historical snapshots.
-- **Separate CI from release control.** Jenkins compiles code and runs tests. Airflow's bundle configuration and the operator client control which branch Airflow reads; no file-copy publisher is used.
-- **Treat branch switching as privileged.** Feature-branch code runs with Airflow/Spark capabilities, so only trusted operators should change the dev bundle ref.
+   - `create_cluster` registers the run with the token broker and starts one Spark container. The container mounts the run's exact bundle commit at `/opt/lakehouse-bundle`, read-only.
+   - `validate_environment` loads the environment's config inside that container with this repository's own `notebooks/common/config_loader.py`.
+   - Each `submit_<task>` runs one entry point with `spark-submit --master local[*]` as its own Spark application. Tasks without `runs_after` start together; the others wait for their predecessors.
+   - `stop_cluster` always runs, even after failures. It removes the container and revokes the run's token.
+   - `verify_workloads_succeeded` succeeds only if every task succeeded.
+4. **Credentials**: the container gets only a short-lived token for the product's writer user and a way to renew it during the run. Spark reads and writes Iceberg tables through the Polaris catalog, and the storage credentials come from Polaris. Everything a run does is within the product's own namespaces and buckets.
+5. **Versions**: code, configs and workflows always come from the same commit, the one recorded for that run.
 
 ## Repository layout
 
 ```text
-configs/                    Per-environment YAML settings
-dags/                       Thin DAG declarations and shared DAG factory
-notebooks/common/            Config loading, CLI parsing, Spark bootstrap
-notebooks/workload/          Jupytext-compatible Spark workload scripts
-tests/                       Unit and property tests
-airflow_bundle_client.py     Operator CLI for selecting the dev Git ref
-airflow_bundle_config.example.json
-                            Secret-free Airflow Git bundle example
-Jenkinsfile                 Compile and test CI pipeline
-AIRFLOW_BUNDLES.md           Bundle setup and operations guide
+workflows/                 One JSON file per Airflow DAG (see the reference below)
+  test_environment.json
+dags/
+  lakehouse.py             The platform stub: the only file allowed in dags/
+notebooks/
+  common/                  Shared helpers for Airflow runs and Jupyter:
+    config_loader.py         load and validate configs/<env>.yml (and configs/<product>/<env>.yml)
+    cli.py                   --environment, --config-dir, and task arguments after --
+    job_runtime.py           start_spark_job(): config plus a catalog-ready Spark session
+  workload/                Spark jobs (Jupytext py:percent files, also notebooks)
+    test_environment.py      creates the smoke table
+    count_sample_rows.py     counts its rows
+    jupyter_helper.py        Jupyter start-up (dev settings)
+configs/                   Non-secret settings: dev.yml, uat.yml, prod.yml, optional <product>/<env>.yml
+tests/                     pytest and Hypothesis tests for the helpers and workloads
+scripts/code_quality.sh    lint, flake8, bandit (used by CI)
+Jenkinsfile                CI checks (no deployment)
+requirements-dev.txt       Test and lint tools
+AGENTS.md                  Rules for coding agents working here
 ```
 
-## Local development and checks
+## Workflow JSON reference
 
-Install the development dependencies and run the repository checks:
+One file per DAG: `workflows/<name>.json`. A complete example:
+
+```json
+{
+  "apiVersion": "lakehouse.local/workflow/v1",
+  "name": "daily_sales",
+  "description": "Load yesterday's sales, then refresh the summary.",
+  "schedule": "0 3 * * *",
+  "tags": ["sales"],
+  "tasks": [
+    {
+      "name": "load_sales",
+      "entrypoint": "load_sales.py",
+      "args": ["--source", "sales_raw", "--days", "1"],
+      "retries": 2,
+      "retry_delay_seconds": 300,
+      "execution_timeout_seconds": 3600
+    },
+    {"name": "refresh_summary", "entrypoint": "refresh_summary.py", "runs_after": ["load_sales"]}
+  ]
+}
+```
+
+**Workflow fields**
+
+| Field | Required | Type and limits | Meaning |
+|---|---|---|---|
+| `apiVersion` | yes | exactly `lakehouse.local/workflow/v1` | The contract version |
+| `name` | yes | 1–100 of `a-z A-Z 0-9 _ . -`, not starting with `.`; must equal the file name | DAG name; the DAG ID is `<bundle>-<name>` |
+| `schedule` | yes | `null`, or a cron expression or preset (`@daily`), at most 100 characters | `null` means manual runs only |
+| `description` | no | printable text, at most 500 characters | Shown in Airflow; a default names the tasks |
+| `tags` | no | at most 10 distinct tags of `a-z A-Z 0-9 _ . : -` (1–50 characters) | Extra Airflow tags; the bundle name and `spark` are always added, and `spark` may not be listed |
+| `tasks` | yes | 1–50 tasks | See below |
+
+**Task fields**
+
+| Field | Required | Type and limits | Meaning |
+|---|---|---|---|
+| `name` | yes | as workflow `name`; unique in the workflow | Task ID `submit_<name>` |
+| `entrypoint` | yes | a `.py` file name that exists in `notebooks/workload/` (no folders) | The job to run; one file may serve several tasks |
+| `runs_after` | no | list of other task names in this workflow, default `[]` | Wait for these tasks; no task may wait for itself, and the order may not loop |
+| `args` | no | list of at most 50 strings (each 1–500 printable characters), default `[]` | Passed to the entry point after `--` (see [entry points](#writing-an-entry-point)) |
+| `retries` | no | integer 0–10 | Airflow retries for this task |
+| `retry_delay_seconds` | no | integer 0–3600; only with `retries` ≥ 1 | Wait between retries |
+| `execution_timeout_seconds` | no | integer 1–86400 | Fail the task if it runs longer |
+
+- **Strict checking**: any unknown field, wrong type, or out-of-range value is an error. For example, `true` isn't accepted as a number, and `"command"` isn't a field.
+- **One bad file stops the whole bundle**: if any file in `workflows/` is invalid, Airflow shows a single import error for `dags/lakehouse.py` that lists every problem by file and field. None of that bundle's DAGs load until it's fixed, so CI checks the files before they're merged.
+- **No templates**: `args` are passed exactly as written. Airflow templates such as `{{ ds }}` aren't rendered, because a template could read Airflow's connections and variables. A scheduled job that needs a date should work it out itself, for example yesterday in UTC.
+
+## The DAG stub
+
+`dags/lakehouse.py` must contain exactly this:
+
+```python
+# Airflow DAGs for this repository, built by the lakehouse platform from workflows/*.json.
+from lakehouse_dags import load_workflows
+
+load_workflows(globals(), __file__)
+```
+
+- **Never edit the stub, and don't add other files to `dags/`**. CI refuses both. Declare DAGs in `workflows/` instead.
+- **The comment matters**: Airflow only parses files that mention both "airflow" and "DAG".
+- **No workflows**: a repository without `workflows/` simply has no DAGs.
+
+## Writing an entry point
+
+An entry point is a Python file in `notebooks/workload/`. In Airflow it's started as:
+
+```text
+spark-submit --master local[*] /opt/lakehouse-bundle/notebooks/workload/<entrypoint> \
+    --environment <prod|uat> --config-dir /opt/lakehouse-bundle/configs [-- <args…>]
+```
+
+Use the shared helpers rather than parsing `sys.argv` yourself:
+
+```python
+from notebooks.common.cli import task_args
+from notebooks.common.job_runtime import start_spark_job
+
+spark, config = start_spark_job("load_sales")  # reads --environment and --config-dir; dev in Jupyter
+extra = task_args()                             # the workflow task's "args"; [] in Jupyter
+```
+
+- **`start_spark_job(app_name)`**:
+  - parses `--environment` and `--config-dir`, or in Jupyter uses `LAKEHOUSE_ENVIRONMENT` (default `dev`);
+  - loads the config, preferring the product folder (see below);
+  - returns `(spark, config)` with the Iceberg catalogs and token handling configured.
+- **Arguments**: `cli.parse_args()` returns the same values plus `task_args`, and `cli.task_args()` returns only the arguments after the first `--`, unchanged. Arguments are passed as a list and never go through a shell.
+- **Environment variables** set in the Airflow container: `LAKEHOUSE_ENVIRONMENT` (`prod` or `uat`), `LAKEHOUSE_PRODUCT` (for example `default`), and `PYTHONPATH=/opt/lakehouse-bundle`, so `notebooks.common` imports work.
+- **Stop Spark at the end**: call `spark.stop()` in a `finally:` block. Put the run code under `if __name__ == "__main__":` so tests and notebooks can import the file without starting Spark.
+- **Packages**: entry points run on the platform's Spark runtime image (Spark 3.5.5, Iceberg 1.10.2, Python 3.10, with PyYAML, pandas, numpy and pyarrow), and nothing else is installed. A shared requirements file for Airflow and Jupyter is planned by the platform.
+
+## Configs and environments
+
+| Environment | Used by | File |
+|---|---|---|
+| `prod` | Airflow, bundle `<product>-main` | `configs/<product>/prod.yml`, else `configs/prod.yml` |
+| `uat` | Airflow, bundle `<product>-uat` | `configs/<product>/uat.yml`, else `configs/uat.yml` |
+| `dev` | Jupyter only | `configs/<product>/dev.yml`, else `configs/dev.yml` |
+
+- **Required keys**: `storage_path` (for example `s3a://bucket-default/`, ending with `/`) and `database_name`, the product's namespace for that environment, for example `default_lh`, `default_lhuat` or `default_lhdev`.
+  - **Usually present**: `catalog_name` (`lakehouse`, `lakehouse_uat` or `lakehouse_dev`).
+  - **Other keys**: any other keys, including nested ones, are passed through to the job as read-only values.
+- **Strict loading**: the loader refuses unknown environment names and never falls back from one environment to another. A missing file fails `validate_environment` before any task runs.
+- **One repository, several products**: put each product's settings in `configs/<product>/`. The `configs/<env>.yml` files are the fallback.
+- **The values must match the platform**: they have to be the product's namespaces and buckets from the platform's data product file. Access to anything else is refused by Polaris.
+- **No secrets**: never put credentials, tokens or endpoints in configs.
+
+## Working in Jupyter
+
+1. Sign in to JupyterHub (<http://jupyterhub.localhost:8000>) with your platform account. You need to be a developer or analyst of the product.
+2. Clone this repository into your workspace and open a file from `notebooks/workload/` as a notebook. Jupytext reads the `py:percent` format.
+3. Run the cells. `# %run ./jupyter_helper.py` finds the repository root, selects `dev`, and starts Spark with **your own** identity, so you see and write only what your groups allow (for a developer, read in `prod` and `uat`, write in `dev`).
+
+`workflows/` and `dags/` play no part in Jupyter. An entry point that works in Jupyter with `dev` should behave the same in Airflow with `uat` and `prod`, apart from data and permissions.
+
+## CI in Jenkins
+
+The platform creates a folder named after the product in Jenkins (<http://127.0.0.1:8090>), with two multibranch jobs running this `Jenkinsfile`:
+
+| Job | Builds | Checks for changes |
+|---|---|---|
+| `<product>_ci` | `main` and `uat` | every 5 minutes |
+| `<product>_cd` | every branch of this repository with an open pull request (not forks) | every 30 minutes |
+
+The pipeline stages are:
+1. install the test dependencies;
+2. compile `dags` and `notebooks`;
+3. **validate workflows** (`lakehouse-validate-workflows .`): the platform's own rules for `workflows/*.json`, the exact stub, and nothing else in `dags/`;
+4. Ruff and Black, Flake8, and Bandit, in parallel;
+5. pytest.
+
+CI doesn't deploy anything: Airflow picks up merged changes from Git by itself.
+
+## How-to
+
+**Add a workflow**
+1. Write the job in `notebooks/workload/<job>.py` (see [entry points](#writing-an-entry-point)) and try it in Jupyter with `dev`.
+2. Add `workflows/<name>.json` with `apiVersion`, `name`, `schedule` and `tasks`.
+3. Open a pull request into `uat`. `<product>_cd` validates and tests the branch.
+4. Merge. Within about 5 minutes Airflow shows `<product>-uat-<name>`; run it there.
+5. Open a pull request from `uat` into `main`. After the merge, `<product>-main-<name>` appears.
+
+**Add a task with arguments and retries**: add an entry to `tasks` with `args`, `retries` and, optionally, `retry_delay_seconds`. Read the arguments with `task_args()`.
+
+**Run a dependency**: list the earlier task's name in `runs_after`. Tasks with no dependencies start in parallel after the config check.
+
+**Check locally before pushing**:
 
 ```bash
-python3 -m pip install -r requirements-dev.txt
-python3 -m compileall -q airflow_bundle_client.py dags notebooks
-python3 -m pytest -q
+python3 -m venv .venv && .venv/bin/python -m pip install -r requirements-dev.txt
+.venv/bin/python -m compileall -q dags notebooks
+PATH=".venv/bin:$PATH" scripts/code_quality.sh all
+.venv/bin/python -m pytest -q
 ```
 
-The Spark workloads require access to a compatible Spark runtime, catalog, and object store to run end to end. Unit tests do not replace deployment validation of Airflow DAG parsing, bundle checkout mounts, Spark dependencies, catalog connectivity, or storage permissions.
+The workflow validator runs in Jenkins. With a copy of the platform's `lakehouse_dags` package, you can also run it yourself: `PYTHONPATH=<platform>/infra/airflow python3 -m lakehouse_dags.validate .`
 
-## Further documentation
+**Remove a workflow**: delete its JSON file. After the next bundle refresh the DAG disappears from Airflow, and its run history stays in Airflow's records.
 
-- [Airflow Git DAG Bundles](AIRFLOW_BUNDLES.md)
-- [AI-DLC design records](aidlc-docs/knowledge/opensource-lakehouse/application-design.md)
+## Limits
+
+- **No Python DAGs**: DAGs are declared only in JSON, and CI refuses Python files in `dags/` other than the stub. Until the platform enforces this in Airflow too, such files would still be parsed there, so keep `dags/` clean.
+- **One container per run**: Spark runs in `local[*]` mode inside one container per DAG run, not on a distributed cluster.
+- **Fixed environments**: Airflow runs only `prod` (from the production branch) and `uat` (from the UAT branch). `dev` is for Jupyter, and feature branches are tested in CI, not in Airflow.
+- **Public repository only**: the platform reads it anonymously.
+- **Scans, not webhooks**: Jenkins checks for changes every 5 or 30 minutes, and Airflow refreshes bundles about every 5 minutes. Pull requests from forks aren't built.
+- **Fixed packages**: entry points can use only the packages in the platform's Spark image.

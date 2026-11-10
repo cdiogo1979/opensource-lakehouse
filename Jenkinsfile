@@ -13,7 +13,18 @@ pipeline {
 
         stage('Validate') {
             steps {
-                sh '.venv/bin/python -m compileall -q airflow_bundle_client.py dags notebooks'
+                sh '.venv/bin/python -m compileall -q dags notebooks'
+            }
+        }
+
+        stage('Validate workflows') {
+            steps {
+                // The lakehouse platform's rules for workflows/*.json and the dags/ stub,
+                // provided by the platform Jenkins (the same checks Airflow applies).
+                sh '''
+                    command -v lakehouse-validate-workflows >/dev/null || { echo "lakehouse-validate-workflows is not installed on this Jenkins" >&2; exit 1; }
+                    lakehouse-validate-workflows .
+                '''
             }
         }
 

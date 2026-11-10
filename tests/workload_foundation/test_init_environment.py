@@ -1,7 +1,5 @@
 """Example-based checks for the environment initialization workload."""
 
-import pytest
-
 from config_loader import EnvironmentConfig, load_environment_config
 from test_environment import (
     SAMPLE_ROWS,
@@ -9,7 +7,6 @@ from test_environment import (
     SAMPLE_TABLE_NAME,
     write_sample_dataset,
 )
-from dag_defaults import identity_for_bundle, standard_dag_kwargs
 
 
 class _FakeDataFrameWriter:
@@ -88,58 +85,6 @@ def test_config_loader_exposes_arbitrary_nested_settings(tmp_path):
     assert config.get("spark")["executor"]["instances"] == 3
     assert config["spark"]["labels"] == ("sample", "lakehouse")
     assert config.to_dict()["spark"]["labels"] == ["sample", "lakehouse"]
-
-
-def test_standard_dag_settings_share_manual_environment_defaults():
-    """DAGs receive the same schedule, version, tags, and ID conventions."""
-    settings = standard_dag_kwargs(
-        environment="uat",
-        workload_name="refresh_dimensions",
-        description="Refresh the dimensions.",
-        schedule=None,
-        tags=("spark",),
-    )
-
-    assert settings["dag_id"] == "uat-refresh_dimensions"
-    assert settings["schedule"] is None
-    assert settings["catchup"] is False
-    assert settings["tags"] == ["uat", "spark"]
-    assert settings["rerun_with_latest_version"] is False
-    assert settings["start_date"].isoformat() == "2024-01-01T00:00:00"
-
-
-@pytest.mark.parametrize(
-    ("bundle_name", "expected_identity"),
-    [
-        ("lakehouse-main", ("main", "prod")),
-        ("lakehouse-prod", ("main", "prod")),
-        ("lakehouse-uat", ("uat", "uat")),
-        ("lakehouse-dev", ("dev", "dev")),
-        ("lakehouse-feature-42", ("dev", "dev")),
-    ],
-)
-def test_bundle_name_selects_environment(tmp_path, bundle_name, expected_identity):
-    """Stable Airflow bundle names select environment independent of Git ref."""
-    dags_dir = tmp_path / "dag_bundles" / bundle_name / "tracking_repo" / "dags"
-    dags_dir.mkdir(parents=True)
-
-    assert identity_for_bundle(dags_dir) == expected_identity
-
-
-def test_versioned_bundle_checkout_selects_environment(tmp_path):
-    """Task-version checkout paths also retain the configured bundle name."""
-    dags_dir = tmp_path / "dag_bundles" / "lakehouse-main" / "versions" / "abc123" / "dags"
-    dags_dir.mkdir(parents=True)
-
-    assert identity_for_bundle(dags_dir) == ("main", "prod")
-
-
-def test_local_dag_path_defaults_to_dev(tmp_path):
-    """A non-versioned local DAG folder uses the development environment."""
-    dags_dir = tmp_path / "dags"
-    dags_dir.mkdir()
-
-    assert identity_for_bundle(dags_dir) == ("dev", "dev")
 
 
 def test_smoke_write_is_limited_to_dedicated_table_and_child_path():

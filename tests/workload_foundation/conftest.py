@@ -8,7 +8,6 @@ from types import ModuleType
 import pytest
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
-sys.path.insert(0, str(REPOSITORY_ROOT / "dags"))
 sys.path.insert(0, str(REPOSITORY_ROOT / "notebooks" / "workload"))
 sys.path.insert(0, str(REPOSITORY_ROOT / "notebooks" / "common"))
 HYPOTHESIS_SEED = int(os.environ.get("HYPOTHESIS_SEED", "0"))
