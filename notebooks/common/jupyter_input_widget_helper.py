@@ -3,7 +3,7 @@
 Run it from a notebook after listing the arguments::
 
     WIDGET_LIST = ["entity", "scale_factor"]
-    # %run ../common/jupyter_input_widget_helper.py
+    # %run ../../common/jupyter_input_widget_helper.py
 
 It shows one text field per name. ``notebooks.common.cli.parse_task_args`` then
 reads their text (an empty field means not given), as Airflow passes the

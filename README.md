@@ -24,8 +24,8 @@ The same code runs in two places:
 
 | This repository | The lakehouse platform |
 |---|---|
-| `workflows/*.json`: which DAGs exist, their tasks, order, schedule, arguments, retries and timeouts | Turning each workflow into an Airflow DAG (the `lakehouse_dags` factory) |
-| `notebooks/workload/*.py`: the Spark jobs, also usable as notebooks | Starting one Spark container per DAG run, with this repository mounted read-only |
+| `workflows/<project>/*.json`: which DAGs exist, their tasks, order, schedule, arguments, retries and timeouts | Turning each workflow into an Airflow DAG (the `lakehouse_dags` factory) |
+| `notebooks/workload/<project>/*.py`: the Spark jobs, also usable as notebooks | Starting one Spark container per DAG run, with this repository mounted read-only |
 | `notebooks/common/`: config loading, argument parsing, Spark session start-up | Issuing the product's short-lived write token to each run, through the token broker |
 | `configs/`: non-secret settings per environment (storage path, catalog, database) | The Git bundles that Airflow reads from this repository (`<product>-main`, `<product>-uat`) |
 | `dags/lakehouse.py`: a fixed two-line stub | The Jenkins jobs that check this repository, and the workflow validator they use |
@@ -59,9 +59,10 @@ Nothing in this repository holds a password, key, or token, and nothing should.
 ## Repository layout
 
 ```text
-workflows/                 One JSON file per Airflow DAG (see the reference below)
-  test_environment.json      the smoke table: create twice, then count
-  generate_tpch.json         TPC-H generation and row-count checks, one task per entity
+workflows/                 One JSON file per Airflow DAG (see the reference below), per subproject
+  sample/                    subproject "sample"
+    test_environment.json      the smoke table: create twice, then count
+    generate_tpch.json         TPC-H generation and row-count checks, one task per entity
 dags/
   lakehouse.py             The platform stub: the only file allowed in dags/
 notebooks/
@@ -71,22 +72,25 @@ notebooks/
     job_runtime.py           start_spark_job(): config, then the platform's Spark session
     jupyter_environment_resolver.py   Jupyter start-up: the clone, the environment, spark and config (%run)
     jupyter_input_widget_helper.py    Jupyter input widgets for a job's task arguments (%run)
-  workload/                Spark jobs (Jupytext py:percent files, also notebooks)
-    test_environment.py      creates the smoke table
-    count_sample_rows.py     counts its rows
-    generate_tpch.py         generates TPC-H data with DuckDB and checks one entity's row count
+  workload/                Spark jobs (Jupytext py:percent files, also notebooks), per subproject
+    sample/                  subproject "sample" (the entry points of workflows/sample/)
+      test_environment.py      creates the smoke table
+      count_sample_rows.py     counts its rows
+      generate_tpch.py         generates TPC-H data with DuckDB and checks one entity's row count
 configs/                   Non-secret settings: dev.yml, uat.yml, prod.yml, optional <product>/<env>.yml
 tests/                     pytest and Hypothesis tests for the helpers and workloads
 scripts/code_quality.sh    lint, flake8, bandit (used by CI)
 Jenkinsfile                CI checks (no deployment)
 requirements.txt           Extra Python packages for the workload code (duckdb), on top of the platform's set
 requirements-dev.txt       Test and lint tools
-AGENTS.md                  Rules for coding agents working here
+AGENTS.md                  Rules for coding agents working here, including the subproject layout
 ```
+
+**Subprojects**: workflows and their notebooks are grouped by subproject, with the same folder name under `workflows/` and `notebooks/workload/` (here `sample`). A workflow in `workflows/<project>/` runs entry points from `notebooks/workload/<project>/`. DAG IDs don't include the subproject (`default-uat-generate_tpch`), so workflow names are unique across the repository. Shared code stays in `notebooks/common/`. To add a subproject, create both folders; see [AGENTS.md](AGENTS.md).
 
 ## Workflow JSON reference
 
-One file per DAG: `workflows/<name>.json`. A complete example:
+One file per DAG: `workflows/<project>/<name>.json`. A complete example:
 
 ```json
 {
@@ -125,7 +129,7 @@ One file per DAG: `workflows/<name>.json`. A complete example:
 | Field | Required | Type and limits | Meaning |
 |---|---|---|---|
 | `name` | yes | as workflow `name`; unique in the workflow | Task ID `submit_<name>` |
-| `entrypoint` | yes | a `.py` file name that exists in `notebooks/workload/` (no folders) | The job to run; one file may serve several tasks |
+| `entrypoint` | yes | a `.py` file name that exists in `notebooks/workload/<project>/` (no folders) | The job to run; one file may serve several tasks |
 | `runs_after` | no | list of other task names in this workflow, default `[]` | Wait for these tasks; no task may wait for itself, and the order may not loop |
 | `args` | no | list of at most 50 strings (each 1–500 printable characters), default `[]` | Passed to the entry point after `--` (see [entry points](#writing-an-entry-point)) |
 | `retries` | no | integer 0–10 | Airflow retries for this task |
@@ -153,10 +157,10 @@ load_workflows(globals(), __file__)
 
 ## Writing an entry point
 
-An entry point is a Python file in `notebooks/workload/`. In Airflow it's started as:
+An entry point is a Python file in `notebooks/workload/<project>/`. In Airflow it's started as:
 
 ```text
-spark-submit --master local[*] /opt/lakehouse-bundle/notebooks/workload/<entrypoint> \
+spark-submit --master local[*] /opt/lakehouse-bundle/notebooks/workload/<project>/<entrypoint> \
     --environment <prod|uat> --config-dir /opt/lakehouse-bundle/configs [-- <args…>]
 ```
 
@@ -193,7 +197,7 @@ arguments = parse_task_args(TASK_ARGUMENTS)     # {"date": "2026-11-10", "mode":
   5. **Execution**: only the `if __name__ == "__main__":` block that runs the job.
 
   CI checks this order.
-- **Start every notebook with the Initialization section** (see [Working in Jupyter](#working-in-jupyter)): `# !lakehouse-install-requirements ~/work/opensource-lakehouse-sample-dp` and `# %run ../common/jupyter_environment_resolver.py`, right after the title cell. CI checks that every file in `notebooks/workload/` has it.
+- **Start every notebook with the Initialization section** (see [Working in Jupyter](#working-in-jupyter)): `# !lakehouse-install-requirements ~/work/opensource-lakehouse-sample-dp` and `# %run ../../common/jupyter_environment_resolver.py`, right after the title cell. CI checks that every file in `notebooks/workload/` has it.
 - **Stop Spark at the end**: call `spark.stop()` in a `finally:` block. Put the run code under `if __name__ == "__main__":` so tests and notebooks can import the file without starting Spark.
 - **Packages**: entry points run on the platform's Python 3.10 environment plus this repository's `requirements.txt`; see [Python packages](#python-packages).
 
@@ -239,7 +243,7 @@ Workload code runs on one Python environment, the same in Airflow's Spark contai
 ## Working in Jupyter
 
 1. Sign in to JupyterHub (<http://jupyterhub.localhost:8000>) with your platform account. You need to be a developer or analyst of the product.
-2. Clone this repository into your workspace and open a file from `notebooks/workload/` as a notebook. Jupytext reads the `py:percent` format.
+2. Clone this repository into your workspace and open a file from `notebooks/workload/<project>/` (for example `notebooks/workload/sample/`) as a notebook. Jupytext reads the `py:percent` format.
 3. Run the **Initialization** section at the top of the notebook. Every notebook starts with it:
 
    ```python
@@ -247,7 +251,7 @@ Workload code runs on one Python environment, the same in Airflow's Spark contai
    # !lakehouse-install-requirements ~/work/opensource-lakehouse-sample-dp
 
    # %%
-   # %run ../common/jupyter_environment_resolver.py
+   # %run ../../common/jupyter_environment_resolver.py
    ```
 
    In the `.py` file both lines are comments (Jupytext's convention), so `spark-submit` in Airflow skips them; opened in Jupyter they become a shell command and a `%run`.
@@ -263,7 +267,7 @@ The path `~/work/opensource-lakehouse-sample-dp` assumes the clone is in `~/work
 
 ```python
 WIDGET_LIST = ["entity", "scale_factor"]
-# %run ../common/jupyter_input_widget_helper.py
+# %run ../../common/jupyter_input_widget_helper.py
 ```
 
 `parse_task_args` reads the fields (an empty field is "not given"); running the helper again keeps what you typed. Without widgets, it reads a `TASK_ARGS` list instead, for example `TASK_ARGS = ["--entity", "orders"]`.
@@ -279,7 +283,7 @@ lakehouse-install-requirements        # or: lakehouse-install-requirements path/
 
 The packages go to `~/.local/lakehouse/python3.10`, which lasts only for the current server session (only `~/work` is kept across restarts): **rerun the command after every server start**. Running the command for another repository adds its packages too. When the platform's lock changes, the command asks you to rerun it with `--reset`, which empties that folder first.
 
-**TPC-H in a notebook**: open `notebooks/workload/generate_tpch.py`, run the Initialization section and the cells up to the widgets, type an entity (for example `orders`), and run the remaining cells.
+**TPC-H in a notebook**: open `notebooks/workload/sample/generate_tpch.py`, run the Initialization section and the cells up to the widgets, type an entity (for example `orders`), and run the remaining cells.
 
 `workflows/` and `dags/` play no part in Jupyter. An entry point that works in Jupyter with `dev` should behave the same in Airflow with `uat` and `prod`, apart from data and permissions.
 
@@ -304,8 +308,8 @@ CI doesn't deploy anything: Airflow picks up merged changes from Git by itself.
 ## How-to
 
 **Add a workflow**
-1. Write the job in `notebooks/workload/<job>.py` (see [entry points](#writing-an-entry-point)) and try it in Jupyter with `dev`.
-2. Add `workflows/<name>.json` with `apiVersion`, `name`, `schedule` and `tasks`.
+1. Write the job in `notebooks/workload/<project>/<job>.py` (see [entry points](#writing-an-entry-point)) and try it in Jupyter with `dev`.
+2. Add `workflows/<project>/<name>.json` with `apiVersion`, `name` (unique in the repository), `schedule` and `tasks`.
 3. Open a pull request into `uat`. `<product>_cd` validates and tests the branch.
 4. Merge. Within about 5 minutes Airflow shows `<product>-uat-<name>`; run it there.
 5. Open a pull request from `uat` into `main`. After the merge, `<product>-main-<name>` appears.

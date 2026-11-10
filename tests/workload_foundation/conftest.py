@@ -8,7 +8,10 @@ from types import ModuleType
 import pytest
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
-sys.path.insert(0, str(REPOSITORY_ROOT / "notebooks" / "workload"))
+# Entry points live in notebooks/workload/<project>/ (one folder per subproject).
+for _project in sorted((REPOSITORY_ROOT / "notebooks" / "workload").iterdir()):
+    if _project.is_dir() and _project.name != "__pycache__":
+        sys.path.insert(0, str(_project))
 sys.path.insert(0, str(REPOSITORY_ROOT / "notebooks" / "common"))
 HYPOTHESIS_SEED = int(os.environ.get("HYPOTHESIS_SEED", "0"))
 

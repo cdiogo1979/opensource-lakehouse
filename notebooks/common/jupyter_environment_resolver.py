@@ -1,9 +1,9 @@
 """Jupyter start-up: this clone's configuration and the platform's Spark session.
 
-Run it from a notebook in ``notebooks/workload/``::
+Run it from a notebook in ``notebooks/workload/<project>/``::
 
     # %env LAKEHOUSE_ENVIRONMENT=uat          (optional; dev when unset)
-    # %run ../common/jupyter_environment_resolver.py
+    # %run ../../common/jupyter_environment_resolver.py
 
 It finds the repository clone that holds the notebook, puts it on the import
 path, and defines ``spark``, ``config`` and ``repository_root`` in the notebook.

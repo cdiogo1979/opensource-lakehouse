@@ -11,7 +11,7 @@ REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
 
 
 def test_the_resolver_finds_the_clone_that_holds_the_notebook(tmp_path):
-    assert resolver.find_repository_root(REPOSITORY_ROOT / "notebooks" / "workload") == REPOSITORY_ROOT
+    assert resolver.find_repository_root(REPOSITORY_ROOT / "notebooks" / "workload" / "sample") == REPOSITORY_ROOT
     with pytest.raises(FileNotFoundError, match="inside a clone"):
         resolver.find_repository_root(tmp_path)
 
@@ -44,19 +44,19 @@ def test_the_helper_and_the_parser_share_the_variable_and_name_rule():
 
 
 def test_entry_points_run_the_scripts_from_common():
-    for path in (REPOSITORY_ROOT / "notebooks/workload").glob("*.py"):
+    for path in (REPOSITORY_ROOT / "notebooks/workload").glob("*/*.py"):
         text = path.read_text()
         assert "jupyter_helper" not in text
         assert "# %run ./" not in text
     assert not (REPOSITORY_ROOT / "notebooks/workload/jupyter_helper.py").exists()
 
 
-INITIALIZATION = ["# !lakehouse-install-requirements ~/work/opensource-lakehouse-sample-dp", "# %run ../common/jupyter_environment_resolver.py"]
+INITIALIZATION = ["# !lakehouse-install-requirements ~/work/opensource-lakehouse-sample-dp", "# %run ../../common/jupyter_environment_resolver.py"]
 
 
 def test_every_notebook_starts_with_the_initialization_section():
     """CR-4: the first code cells of each notebook install the extras and run the resolver."""
-    for path in sorted((REPOSITORY_ROOT / "notebooks/workload").glob("*.py")):
+    for path in sorted((REPOSITORY_ROOT / "notebooks/workload").glob("*/*.py")):
         cells = [cell.strip() for cell in path.read_text().split("# %%")[1:]]
         code = [cell for cell in cells if not cell.startswith("[markdown]")]
         assert code[:2] == INITIALIZATION, path.name
@@ -79,7 +79,7 @@ def sections(text):
 
 def test_every_notebook_has_initialization_imports_its_own_sections_and_execution():
     """CR-5: the same frame in every notebook; the job's own sections sit between Imports and Execution."""
-    for path in sorted((REPOSITORY_ROOT / "notebooks/workload").glob("*.py")):
+    for path in sorted((REPOSITORY_ROOT / "notebooks/workload").glob("*/*.py")):
         found = sections(path.read_text())
         headings = [heading for heading, _ in found]
         assert headings[:2] == ["Initialization", "Imports"] and headings[-1] == "Execution", (path.name, headings)
@@ -87,3 +87,12 @@ def test_every_notebook_has_initialization_imports_its_own_sections_and_executio
         assert found[1][1][0].startswith(("import ", "from ")), path.name
         execution = "\n".join(found[-1][1])
         assert execution.startswith('if __name__ == "__main__":') and path.read_text().count('if __name__ == "__main__":') == 1, path.name
+
+
+def test_workflows_and_notebooks_live_in_matching_subproject_folders():
+    """Every subproject has the same name under workflows/ and notebooks/workload/; nothing is left at the top level."""
+    workflows = REPOSITORY_ROOT / "workflows"
+    workload = REPOSITORY_ROOT / "notebooks" / "workload"
+    assert not list(workflows.glob("*.json")) and not list(workload.glob("*.py"))
+    projects = {path.name for path in workflows.iterdir() if path.is_dir()}
+    assert projects and projects <= {path.name for path in workload.iterdir() if path.is_dir()}

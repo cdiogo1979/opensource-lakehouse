@@ -7,7 +7,7 @@
 # needs no Spark session (the Initialization starts one in Jupyter, unused here)
 # and writes nothing.
 #
-# In Airflow, `workflows/generate_tpch.json` runs it once per entity with
+# In Airflow, `workflows/sample/generate_tpch.json` runs it once per entity with
 # `--entity <name>` after `--`; `--scale-factor` is optional (default 0.01).
 # In Jupyter, run the Initialization cells (and restart the kernel after the
 # first install); then run the widget cell below, fill in `entity` (and,
@@ -28,7 +28,7 @@
 # !lakehouse-install-requirements ~/work/opensource-lakehouse-sample-dp
 
 # %%
-# %run ../common/jupyter_environment_resolver.py
+# %run ../../common/jupyter_environment_resolver.py
 
 # %% [markdown]
 # ## Imports
@@ -60,7 +60,7 @@ TASK_ARGUMENTS = {"entity": {"required": True}, "scale_factor": {"default": "0.0
 WIDGET_LIST = ["entity", "scale_factor"]
 
 # %%
-# %run ../common/jupyter_input_widget_helper.py
+# %run ../../common/jupyter_input_widget_helper.py
 
 # %% [markdown]
 # ## TPC-H rules
