@@ -25,8 +25,8 @@
 # %% [markdown]
 # ## Imports
 #
-# In Jupyter, the Initialization cells above start Spark. In a regular
-# `spark-submit` run, the DAG supplies the repository root on `PYTHONPATH`.
+# Standard and third-party imports, and logging. Under `spark-submit` the
+# repository root is on `PYTHONPATH`; in Jupyter the Initialization put it there.
 
 # %%
 import logging
@@ -42,7 +42,7 @@ logger = logging.getLogger(__name__)
 
 
 # %% [markdown]
-# ## Workload settings and operations
+# ## Sample table
 #
 # `storage_path` is expected to end in `/`, and `database_name` is a clean
 # Spark identifier. The sample write is deterministic and scoped to the
@@ -98,17 +98,18 @@ def test_environment(spark: Any, config: Mapping[str, Any]) -> None:
 
 
 # %% [markdown]
-# ## Create the namespace and smoke table, then stop Spark
+# ## Execution
 #
-# The table write creates the object-storage prefix. Only the dedicated
+# In Airflow, `start_spark_job` loads the environment's config and starts Spark;
+# in Jupyter, the Initialization already defined `spark` and `config`. The table
+# write creates the object-storage prefix; only the dedicated
 # `sample_spark_job_output` table is overwritten. The `finally` block stops
 # Spark even if catalog or storage initialization fails.
 
 # %%
 if __name__ == "__main__":
     # Importing this workload from pytest or another module must not start
-    # Spark or parse the caller's command-line arguments. In Jupyter, the
-    # preceding %run magic supplies `spark` and `config` in this namespace.
+    # Spark or parse the caller's command-line arguments.
     if "ipykernel" not in sys.modules:
         from notebooks.common.job_runtime import start_spark_job
 

@@ -22,11 +22,10 @@
 # %run ../common/jupyter_environment_resolver.py
 
 # %% [markdown]
-# ## Start Spark and load the environment configuration
+# ## Imports
 #
-# In Jupyter, the Initialization cells above select `dev` (or
-# `LAKEHOUSE_ENVIRONMENT`) and expose `spark` and `config`. In Airflow, `spark-submit` starts the session using the
-# environment and config directory passed by the DAG.
+# Standard and third-party imports, and logging. Under `spark-submit` the
+# repository root is on `PYTHONPATH`; in Jupyter the Initialization put it there.
 
 # %%
 import logging
@@ -69,7 +68,11 @@ def count_sample_rows(spark: Any, config: Mapping[str, Any]) -> int:
 
 
 # %% [markdown]
-# ## Run the count and stop Spark
+# ## Execution
+#
+# In Airflow, `start_spark_job` loads the environment's config and starts Spark;
+# in Jupyter, the Initialization already defined `spark` and `config`. Spark is
+# stopped at the end, also after a failure.
 
 # %%
 if __name__ == "__main__":

@@ -185,6 +185,14 @@ arguments = parse_task_args(TASK_ARGUMENTS)     # {"date": "2026-11-10", "mode":
 
   `cli.task_args()` still returns the raw list (after `--`, or `TASK_ARGS` in Jupyter). Arguments are passed as a list and never go through a shell.
 - **Environment variables** set in the Airflow container: `LAKEHOUSE_ENVIRONMENT` (`prod` or `uat`), `LAKEHOUSE_PRODUCT` (for example `default`), and `PYTHONPATH=/opt/lakehouse-bundle`, so `notebooks.common` imports work.
+- **The same structure in every notebook**, as `## ` markdown sections:
+  1. the title (`# `) and what the job does;
+  2. **Initialization**: the two Jupyter cells below;
+  3. **Imports**: imports and logging;
+  4. the job's own sections (for example **Task arguments**, **TPC-H rules**, **Generate and count**): settings and functions, no top-level work;
+  5. **Execution**: only the `if __name__ == "__main__":` block that runs the job.
+
+  CI checks this order.
 - **Start every notebook with the Initialization section** (see [Working in Jupyter](#working-in-jupyter)): `# !lakehouse-install-requirements ~/work/opensource-lakehouse` and `# %run ../common/jupyter_environment_resolver.py`, right after the title cell. CI checks that every file in `notebooks/workload/` has it.
 - **Stop Spark at the end**: call `spark.stop()` in a `finally:` block. Put the run code under `if __name__ == "__main__":` so tests and notebooks can import the file without starting Spark.
 - **Packages**: entry points run on the platform's Python 3.10 environment plus this repository's `requirements.txt`; see [Python packages](#python-packages).

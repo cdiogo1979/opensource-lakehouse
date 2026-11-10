@@ -4,7 +4,8 @@
 # This Jupytext `py:percent` notebook generates the TPC-H dataset in memory with
 # DuckDB (the `duckdb` package from this repository's `requirements.txt`), counts
 # the rows of one TPC-H entity, and checks the count against the TPC-H rules. It
-# starts no Spark session and writes nothing.
+# needs no Spark session (the Initialization starts one in Jupyter, unused here)
+# and writes nothing.
 #
 # In Airflow, `workflows/generate_tpch.json` runs it once per entity with
 # `--entity <name>` after `--`; `--scale-factor` is optional (default 0.01).
@@ -28,6 +29,12 @@
 
 # %%
 # %run ../common/jupyter_environment_resolver.py
+
+# %% [markdown]
+# ## Imports
+#
+# Standard and third-party imports, and logging. Under `spark-submit` the
+# repository root is on `PYTHONPATH`; in Jupyter the Initialization put it there.
 
 # %%
 import logging
@@ -170,6 +177,12 @@ def generate_tpch(entity: str, scale_factor: Decimal) -> int:
     check_count(entity, scale_factor, count, orders_count)
     return count
 
+
+# %% [markdown]
+# ## Execution
+#
+# Reads the task arguments (the workflow's `args` in Airflow, the widgets in
+# Jupyter), checks them, then generates and counts.
 
 # %%
 if __name__ == "__main__":
