@@ -1,0 +1,5 @@
+# Extra packages for this repository's workload code, beyond the lakehouse platform's
+# shared set (pandas, numpy, pyarrow, PyYAML, requests, ...). Installed at the start of
+# every Airflow run and with `lakehouse-install-requirements` in Jupyter, constrained by
+# the platform lock: plain requirements only, prebuilt aarch64 wheels only.
+duckdb==1.5.6  # generate_tpch.py: TPC-H data generation

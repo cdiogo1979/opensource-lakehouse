@@ -13,11 +13,12 @@ The same code runs in two places:
 4. [Workflow JSON reference](#workflow-json-reference)
 5. [The DAG stub](#the-dag-stub)
 6. [Writing an entry point](#writing-an-entry-point)
-7. [Configs and environments](#configs-and-environments)
-8. [Working in Jupyter](#working-in-jupyter)
-9. [CI in Jenkins](#ci-in-jenkins)
-10. [How-to](#how-to)
-11. [Limits](#limits)
+7. [Python packages](#python-packages)
+8. [Configs and environments](#configs-and-environments)
+9. [Working in Jupyter](#working-in-jupyter)
+10. [CI in Jenkins](#ci-in-jenkins)
+11. [How-to](#how-to)
+12. [Limits](#limits)
 
 ## What lives where
 
@@ -28,6 +29,7 @@ The same code runs in two places:
 | `notebooks/common/`: config loading, argument parsing, Spark session start-up | Issuing the product's short-lived write token to each run, through the token broker |
 | `configs/`: non-secret settings per environment (storage path, catalog, database) | The Git bundles that Airflow reads from this repository (`<product>-main`, `<product>-uat`) |
 | `dags/lakehouse.py`: a fixed two-line stub | The Jenkins jobs that check this repository, and the workflow validator they use |
+| `requirements.txt` (optional): extra Python packages for this repository's code | The shared Python 3.10 environment (pandas, numpy, pyarrow, PyYAML, requests, ...) and the lock that pins it, the same in Airflow and Jupyter |
 
 Nothing in this repository holds a password, key, or token, and nothing should.
 
@@ -37,15 +39,16 @@ Nothing in this repository holds a password, key, or token, and nothing should.
    - `<product>-main` tracks the production branch (`main` for `default`) and runs in environment `prod`;
    - `<product>-uat` tracks the UAT branch (`uat`) and runs in environment `uat`.
 
-   Each bundle checks out `dags/`, `workflows/`, `notebooks/` and `configs/`, and refreshes about every 5 minutes.
+   Each bundle checks out `dags/`, `workflows/`, `notebooks/`, `configs/` and the files at the repository root (such as `requirements.txt`), and refreshes about every 5 minutes.
 2. **DAGs**: Airflow parses `dags/lakehouse.py`, which asks the platform to build one DAG per `workflows/<name>.json`. The DAG ID is `<bundle>-<name>`, for example `default-uat-test_environment`. The platform's token broker relies on that prefix to pick the product's writer, so DAG IDs are never chosen in this repository.
 3. **Each DAG has the same fixed shape**:
 
    ```text
-   create_cluster ─▶ validate_environment ─▶ submit_<task> … (in runs_after order) ─▶ stop_cluster ─▶ verify_workloads_succeeded
+   create_cluster ─▶ install_requirements ─▶ validate_environment ─▶ submit_<task> … (in runs_after order) ─▶ stop_cluster ─▶ verify_workloads_succeeded
    ```
 
    - `create_cluster` registers the run with the token broker and starts one Spark container. The container mounts the run's exact bundle commit at `/opt/lakehouse-bundle`, read-only.
+   - `install_requirements` installs this repository's `requirements.txt` into the container, constrained by the platform's lock (see [Python packages](#python-packages)). Without a `requirements.txt` it does nothing. It retries twice, 30 seconds apart; if it still fails, no task runs.
    - `validate_environment` loads the environment's config inside that container with this repository's own `notebooks/common/config_loader.py`.
    - Each `submit_<task>` runs one entry point with `spark-submit --master local[*]` as its own Spark application. Tasks without `runs_after` start together; the others wait for their predecessors.
    - `stop_cluster` always runs, even after failures. It removes the container and revokes the run's token.
@@ -57,7 +60,8 @@ Nothing in this repository holds a password, key, or token, and nothing should.
 
 ```text
 workflows/                 One JSON file per Airflow DAG (see the reference below)
-  test_environment.json
+  test_environment.json      the smoke table: create twice, then count
+  generate_tpch.json         TPC-H generation and row-count checks, one task per entity
 dags/
   lakehouse.py             The platform stub: the only file allowed in dags/
 notebooks/
@@ -68,11 +72,13 @@ notebooks/
   workload/                Spark jobs (Jupytext py:percent files, also notebooks)
     test_environment.py      creates the smoke table
     count_sample_rows.py     counts its rows
+    generate_tpch.py         generates TPC-H data with DuckDB and checks one entity's row count
     jupyter_helper.py        Jupyter start-up (dev settings)
 configs/                   Non-secret settings: dev.yml, uat.yml, prod.yml, optional <product>/<env>.yml
 tests/                     pytest and Hypothesis tests for the helpers and workloads
 scripts/code_quality.sh    lint, flake8, bandit (used by CI)
 Jenkinsfile                CI checks (no deployment)
+requirements.txt           Extra Python packages for the workload code (duckdb), on top of the platform's set
 requirements-dev.txt       Test and lint tools
 AGENTS.md                  Rules for coding agents working here
 ```
@@ -170,7 +176,29 @@ extra = task_args()                             # the workflow task's "args"; []
 - **Arguments**: `cli.parse_args()` returns the same values plus `task_args`, and `cli.task_args()` returns only the arguments after the first `--`, unchanged. Arguments are passed as a list and never go through a shell.
 - **Environment variables** set in the Airflow container: `LAKEHOUSE_ENVIRONMENT` (`prod` or `uat`), `LAKEHOUSE_PRODUCT` (for example `default`), and `PYTHONPATH=/opt/lakehouse-bundle`, so `notebooks.common` imports work.
 - **Stop Spark at the end**: call `spark.stop()` in a `finally:` block. Put the run code under `if __name__ == "__main__":` so tests and notebooks can import the file without starting Spark.
-- **Packages**: entry points run on the platform's Spark runtime image (Spark 3.5.5, Iceberg 1.10.2, Python 3.10, with PyYAML, pandas, numpy and pyarrow), and nothing else is installed. A shared requirements file for Airflow and Jupyter is planned by the platform.
+- **Packages**: entry points run on the platform's Python 3.10 environment plus this repository's `requirements.txt`; see [Python packages](#python-packages).
+
+## Python packages
+
+Workload code runs on one Python environment, the same in Airflow's Spark containers and in the Jupyter kernel: **Python 3.10** with the platform's pinned packages, and PySpark 3.5.5 from the Spark installation.
+
+- **The platform's packages**: PyYAML, requests, pandas, numpy, pyarrow, ipykernel and jupytext, with their dependencies, at versions fixed by the platform's lock (`infra/workload-python/requirements.lock` in the platform repository). Other packages are not available unless this repository asks for them.
+- **This repository's extras**: list them in `requirements.txt` at the repository root, one plain requirement per line, for example:
+
+  ```text
+  duckdb==1.5.6  # generate_tpch.py: TPC-H data generation
+  ```
+
+  - **Pin them** (`==`), so every run gets the same version.
+  - **The platform's versions win**: the lock is always applied as a constraint. A requirement that needs a different version of a locked package (for example `pandas==2.2.2`, or `numpy>=2`) fails, in CI and in the run. Listing a locked package at its locked version is allowed and changes nothing.
+  - **Allowed lines**: package names with optional extras (`requests[socks]`), version specifiers (`==`, `>=`, `<`, `~=`, ...), environment markers, and comments.
+  - **Refused lines**: pip options (`-r`, `-e`, `-c`, `--index-url`, `--extra-index-url`, `--hash`, ...), URLs, paths and `name @ url` references, and `pyspark`, `py4j`, `pip`, `setuptools`, `wheel` (the platform provides them).
+  - **Prebuilt wheels only**: every package, dependencies included, needs a wheel for CPython 3.10 on Linux **aarch64** with glibc 2.31 or older (`manylinux_2_17` to `manylinux_2_31`, or `manylinux2014`). Nothing is compiled. For example, `pytpch` 0.2.0 ships only an x86_64 wheel for glibc 2.34, so it can't be used here; DuckDB's built-in TPC-H generator replaces it.
+- **When they are installed**:
+  - **Airflow**: by `install_requirements` at the start of every run, into that run's container only, from public PyPI. A run of a repository without `requirements.txt` needs no network for this. With extras, the install time is part of the run (a few seconds for `duckdb`).
+  - **Jupyter**: when you run `lakehouse-install-requirements` (see [Working in Jupyter](#working-in-jupyter)).
+  - **CI**: `lakehouse-validate-workflows` checks the file against the lock for the platform's architecture, and the test stage installs it so the unit tests can use it.
+- **DuckDB's TPC-H extension**: `generate_tpch.py` uses DuckDB's `tpch` extension, which DuckDB downloads from `extensions.duckdb.org` the first time it is used in a container (each run, and once per Jupyter home).
 
 ## Configs and environments
 
@@ -194,6 +222,19 @@ extra = task_args()                             # the workflow task's "args"; []
 2. Clone this repository into your workspace and open a file from `notebooks/workload/` as a notebook. Jupytext reads the `py:percent` format.
 3. Run the cells. `# %run ./jupyter_helper.py` finds the repository root, selects `dev`, and starts Spark with **your own** identity, so you see and write only what your groups allow (for a developer, read in `prod` and `uat`, write in `dev`).
 
+**The kernel**: the only kernel is **Lakehouse (Python 3.10)**, with the same packages as Airflow runs. Notebooks saved with an older kernel open with it.
+
+**This repository's extras** (`requirements.txt`): open a terminal in JupyterLab (or use `!` in a cell), then restart the kernel:
+
+```bash
+cd ~/work/opensource-lakehouse        # your clone
+lakehouse-install-requirements        # or: lakehouse-install-requirements path/to/clone
+```
+
+The packages go to `~/.local/lakehouse/python3.10` in your home, which survives server restarts. Running the command for another repository adds its packages too. When the platform's lock changes, the command asks you to rerun it with `--reset`, which empties that folder first.
+
+**TPC-H in a notebook**: open `notebooks/workload/generate_tpch.py`, set `ENTITY` and `SCALE_FACTOR`, and run all cells.
+
 `workflows/` and `dags/` play no part in Jupyter. An entry point that works in Jupyter with `dev` should behave the same in Airflow with `uat` and `prod`, apart from data and permissions.
 
 ## CI in Jenkins
@@ -206,9 +247,9 @@ The platform creates a folder named after the product in Jenkins (<http://127.0.
 | `<product>_cd` | every branch of this repository with an open pull request (not forks) | every 30 minutes |
 
 The pipeline stages are:
-1. install the test dependencies;
+1. install the test dependencies, and `requirements.txt` constrained by the platform's lock;
 2. compile `dags` and `notebooks`;
-3. **validate workflows** (`lakehouse-validate-workflows .`): the platform's own rules for `workflows/*.json`, the exact stub, and nothing else in `dags/`;
+3. **validate workflows** (`lakehouse-validate-workflows .`): the platform's own rules for `workflows/*.json`, the exact stub, and nothing else in `dags/`, then `requirements.txt` against the platform's lock (it lists the packages it would add);
 4. Ruff and Black, Flake8, and Bandit, in parallel;
 5. pytest.
 
@@ -224,6 +265,12 @@ CI doesn't deploy anything: Airflow picks up merged changes from Git by itself.
 5. Open a pull request from `uat` into `main`. After the merge, `<product>-main-<name>` appears.
 
 **Add a task with arguments and retries**: add an entry to `tasks` with `args`, `retries` and, optionally, `retry_delay_seconds`. Read the arguments with `task_args()`.
+
+**Add a Python package**:
+1. Add `<package>==<version>` to `requirements.txt`, and check that the package has a Linux aarch64 wheel for CPython 3.10 (on PyPI, the file list of that version).
+2. In Jupyter, run `lakehouse-install-requirements`, restart the kernel, and try your code with `dev`.
+3. Open a pull request. CI refuses the change if the package conflicts with the platform's versions or has no suitable wheel.
+4. If the package belongs in every product's environment, ask the platform team to add it to the platform's set instead.
 
 **Run a dependency**: list the earlier task's name in `runs_after`. Tasks with no dependencies start in parallel after the config check.
 
@@ -247,4 +294,5 @@ The workflow validator runs in Jenkins. With a copy of the platform's `lakehouse
 - **Fixed environments**: Airflow runs only `prod` (from the production branch) and `uat` (from the UAT branch). `dev` is for Jupyter, and feature branches are tested in CI, not in Airflow.
 - **Public repository only**: the platform reads it anonymously.
 - **Scans, not webhooks**: Jenkins checks for changes every 5 or 30 minutes, and Airflow refreshes bundles about every 5 minutes. Pull requests from forks aren't built.
-- **Fixed packages**: entry points can use only the packages in the platform's Spark image.
+- **Packages from public PyPI, prebuilt aarch64 wheels only**: no private index, no source builds, and no cache: each Airflow run with a `requirements.txt` installs it again.
+- **The platform's versions are fixed for a repository**: to change a locked package's version, the platform's lock has to change.

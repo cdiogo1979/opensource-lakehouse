@@ -8,6 +8,7 @@ This is a lakehouse **data product repository**. [README.md](README.md) is the c
 - `notebooks/common/`: shared helpers (`config_loader.py`, `cli.py`, `job_runtime.py`), used by Airflow runs and Jupyter.
 - `configs/<env>.yml` and optional `configs/<product>/<env>.yml`: non-secret settings for `prod`, `uat`, `dev`.
 - `dags/lakehouse.py`: the platform stub. **Never edit it, and never add files to `dags/`.**
+- `requirements.txt`: optional extra Python packages for the workload code, installed by the platform at each Airflow run and with `lakehouse-install-requirements` in Jupyter.
 - `tests/`, `scripts/code_quality.sh`, `Jenkinsfile`, `requirements-dev.txt`.
 
 ## Rules
@@ -20,7 +21,11 @@ This is a lakehouse **data product repository**. [README.md](README.md) is the c
   - the loader accepts only `dev`, `uat` and `prod`, requires `storage_path` and `database_name`, and never falls back across environments;
   - values must be the product's own namespaces and buckets;
   - no credentials, tokens, or endpoints anywhere in the repository.
-- **Dependencies**: Airflow, Spark and provider versions belong to the platform; don't pin or install them here. Entry points can use only what the platform's Spark image provides. Test tools go in `requirements-dev.txt`.
+- **Dependencies**:
+  - Airflow, Spark, PySpark and Python versions belong to the platform; don't pin or install them here.
+  - Entry points run on the platform's Python 3.10 set (PyYAML, requests, pandas, numpy, pyarrow, ...) plus `requirements.txt`.
+  - `requirements.txt` holds only plain, pinned requirements (`name==version`): no pip options, URLs, paths, or `pyspark`/`py4j`/`pip`/`setuptools`/`wheel`. Every package must have a CPython 3.10 Linux aarch64 wheel for glibc 2.31 or older, and must not need a different version of a platform package. CI (`lakehouse-validate-workflows .`) checks this.
+  - Test tools go in `requirements-dev.txt`.
 - **Python style**: Google-style docstrings on new functions, Black and Ruff with line length 200, Flake8 and Bandit clean (`scripts/code_quality.sh all`).
 - **Keep the docs current**: update `README.md`, and this file if a rule changes, whenever the layout or a contract changes.
 - **AI-DLC work**: follow `.agents/skills/aidlc-workflows/SKILL.md`; artifacts live in `aidlc-docs/`.

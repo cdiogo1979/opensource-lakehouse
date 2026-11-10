@@ -1,0 +1,17 @@
+{
+  "apiVersion": "lakehouse.local/workflow/v1",
+  "name": "generate_tpch",
+  "description": "Generate TPC-H data with DuckDB and check the row count of each entity, in one Spark container.",
+  "schedule": null,
+  "tags": ["tpch"],
+  "tasks": [
+    {"name": "generate_region", "entrypoint": "generate_tpch.py", "args": ["--entity", "region"]},
+    {"name": "generate_nation", "entrypoint": "generate_tpch.py", "args": ["--entity", "nation"]},
+    {"name": "generate_supplier", "entrypoint": "generate_tpch.py", "args": ["--entity", "supplier"]},
+    {"name": "generate_customer", "entrypoint": "generate_tpch.py", "args": ["--entity", "customer"]},
+    {"name": "generate_part", "entrypoint": "generate_tpch.py", "args": ["--entity", "part"]},
+    {"name": "generate_partsupp", "entrypoint": "generate_tpch.py", "args": ["--entity", "partsupp"]},
+    {"name": "generate_orders", "entrypoint": "generate_tpch.py", "args": ["--entity", "orders"]},
+    {"name": "generate_lineitem", "entrypoint": "generate_tpch.py", "args": ["--entity", "lineitem"]}
+  ]
+}

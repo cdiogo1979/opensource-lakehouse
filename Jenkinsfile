@@ -7,6 +7,11 @@ pipeline {
                 sh '''
                     python3 -m venv .venv
                     .venv/bin/python -m pip install --disable-pip-version-check -r requirements-dev.txt
+                    # The repository's extras, constrained by the platform lock (mounted by the platform Jenkins).
+                    if [ -f requirements.txt ]; then
+                        .venv/bin/python -m pip install --disable-pip-version-check --only-binary=:all: \
+                            -r requirements.txt --constraint /opt/lakehouse/workload-python/requirements.lock
+                    fi
                 '''
             }
         }
