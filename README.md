@@ -231,7 +231,7 @@ cd ~/work/opensource-lakehouse        # your clone
 lakehouse-install-requirements        # or: lakehouse-install-requirements path/to/clone
 ```
 
-The packages go to `~/.local/lakehouse/python3.10` in your home, which survives server restarts. Running the command for another repository adds its packages too. When the platform's lock changes, the command asks you to rerun it with `--reset`, which empties that folder first.
+The packages go to `~/.local/lakehouse/python3.10`, which lasts only for the current server session (only `~/work` is kept across restarts): **rerun the command after every server start**. Running the command for another repository adds its packages too. When the platform's lock changes, the command asks you to rerun it with `--reset`, which empties that folder first.
 
 **TPC-H in a notebook**: open `notebooks/workload/generate_tpch.py`, set `ENTITY` and `SCALE_FACTOR`, and run all cells.
 
