@@ -81,7 +81,7 @@ def write_sample_dataset(spark: Any, config: Mapping[str, Any]) -> None:
     dataframe = dataframe.withColumn("creation_timestamp", current_timestamp())
     (dataframe.write.format("iceberg").mode("overwrite").option("path", output_path).saveAsTable(table_identifier))
     logger.info(
-        "Committed current contents to Iceberg table '%s' at '%s'; Nessie GC manages " "physical cleanup of files no longer referenced by any branch or tag.",
+        "Committed current contents to Iceberg table '%s' at '%s'; files of replaced snapshots stay until the table's snapshots are expired.",
         table_identifier,
         output_path,
     )
