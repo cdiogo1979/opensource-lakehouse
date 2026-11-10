@@ -16,7 +16,7 @@
 #    It defines `spark` and `config`.
 
 # %%
-# !lakehouse-install-requirements ~/work/opensource-lakehouse
+# !lakehouse-install-requirements ~/work/opensource-lakehouse-sample-dp
 
 # %%
 # %run ../common/jupyter_environment_resolver.py

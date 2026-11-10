@@ -193,7 +193,7 @@ arguments = parse_task_args(TASK_ARGUMENTS)     # {"date": "2026-11-10", "mode":
   5. **Execution**: only the `if __name__ == "__main__":` block that runs the job.
 
   CI checks this order.
-- **Start every notebook with the Initialization section** (see [Working in Jupyter](#working-in-jupyter)): `# !lakehouse-install-requirements ~/work/opensource-lakehouse` and `# %run ../common/jupyter_environment_resolver.py`, right after the title cell. CI checks that every file in `notebooks/workload/` has it.
+- **Start every notebook with the Initialization section** (see [Working in Jupyter](#working-in-jupyter)): `# !lakehouse-install-requirements ~/work/opensource-lakehouse-sample-dp` and `# %run ../common/jupyter_environment_resolver.py`, right after the title cell. CI checks that every file in `notebooks/workload/` has it.
 - **Stop Spark at the end**: call `spark.stop()` in a `finally:` block. Put the run code under `if __name__ == "__main__":` so tests and notebooks can import the file without starting Spark.
 - **Packages**: entry points run on the platform's Python 3.10 environment plus this repository's `requirements.txt`; see [Python packages](#python-packages).
 
@@ -244,7 +244,7 @@ Workload code runs on one Python environment, the same in Airflow's Spark contai
 
    ```python
    # %%
-   # !lakehouse-install-requirements ~/work/opensource-lakehouse
+   # !lakehouse-install-requirements ~/work/opensource-lakehouse-sample-dp
 
    # %%
    # %run ../common/jupyter_environment_resolver.py
@@ -255,7 +255,7 @@ Workload code runs on one Python environment, the same in Airflow's Spark contai
    - The second cell finds the clone that holds the notebook, selects `dev`, and starts Spark with **your own** identity, so you see and write only what your groups allow (for a developer, read in `prod` and `uat`, write in `dev`). It defines `spark` and `config`.
 4. Run the rest of the notebook.
 
-The path `~/work/opensource-lakehouse` assumes the clone is in `~/work`, as in step 2; adjust it if you cloned elsewhere.
+The path `~/work/opensource-lakehouse-sample-dp` assumes the clone is in `~/work`, as in step 2; adjust it if you cloned elsewhere.
 
 **Another environment**: run `%env LAKEHOUSE_ENVIRONMENT=uat` (or `prod`) before the Initialization section. A kernel that already has a session needs a restart to switch.
 
@@ -273,7 +273,7 @@ WIDGET_LIST = ["entity", "scale_factor"]
 **This repository's extras** (`requirements.txt`): the Initialization section installs them; you can also run the command in a JupyterLab terminal, then restart the kernel:
 
 ```bash
-cd ~/work/opensource-lakehouse        # your clone
+cd ~/work/opensource-lakehouse-sample-dp        # your clone
 lakehouse-install-requirements        # or: lakehouse-install-requirements path/to/clone
 ```
 

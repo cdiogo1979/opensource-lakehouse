@@ -51,7 +51,7 @@ def test_entry_points_run_the_scripts_from_common():
     assert not (REPOSITORY_ROOT / "notebooks/workload/jupyter_helper.py").exists()
 
 
-INITIALIZATION = ["# !lakehouse-install-requirements ~/work/opensource-lakehouse", "# %run ../common/jupyter_environment_resolver.py"]
+INITIALIZATION = ["# !lakehouse-install-requirements ~/work/opensource-lakehouse-sample-dp", "# %run ../common/jupyter_environment_resolver.py"]
 
 
 def test_every_notebook_starts_with_the_initialization_section():
