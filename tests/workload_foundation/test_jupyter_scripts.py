@@ -44,22 +44,34 @@ def test_the_helper_and_the_parser_share_the_variable_and_name_rule():
 
 
 def test_entry_points_run_the_scripts_from_common():
-    for path in (REPOSITORY_ROOT / "notebooks/workload").glob("*/*.py"):
+    for path in notebooks():
         text = path.read_text()
         assert "jupyter_helper" not in text
         assert "# %run ./" not in text
     assert not (REPOSITORY_ROOT / "notebooks/workload/jupyter_helper.py").exists()
 
 
-INITIALIZATION = ["# !lakehouse-install-requirements ~/work/opensource-lakehouse-sample-dp", "# %run ../../common/jupyter_environment_resolver.py"]
+LAYERS = ("bronze", "silver", "gold", "ops", "deploy")
+
+
+def notebooks():
+    """Every notebook in notebooks/workload/<project>/ and its layer folders."""
+    workload = REPOSITORY_ROOT / "notebooks/workload"
+    return sorted([*workload.glob("*/*.py"), *workload.glob("*/*/*.py")])
+
+
+def initialization(path):
+    """The Initialization lines for a notebook, with the %run path matching its depth."""
+    up = "../" * (len(path.relative_to(REPOSITORY_ROOT / "notebooks").parts) - 1)
+    return ["# !lakehouse-install-requirements ~/work/opensource-lakehouse-sample-dp", f"# %run {up}common/jupyter_environment_resolver.py"]
 
 
 def test_every_notebook_starts_with_the_initialization_section():
     """CR-4: the first code cells of each notebook install the extras and run the resolver."""
-    for path in sorted((REPOSITORY_ROOT / "notebooks/workload").glob("*/*.py")):
+    for path in sorted(notebooks()):
         cells = [cell.strip() for cell in path.read_text().split("# %%")[1:]]
         code = [cell for cell in cells if not cell.startswith("[markdown]")]
-        assert code[:2] == INITIALIZATION, path.name
+        assert code[:2] == initialization(path), path.name
         assert cells[1].startswith("[markdown]\n# ## Initialization"), path.name
 
 
@@ -79,7 +91,7 @@ def sections(text):
 
 def test_every_notebook_has_initialization_imports_its_own_sections_and_execution():
     """CR-5: the same frame in every notebook; the job's own sections sit between Imports and Execution."""
-    for path in sorted((REPOSITORY_ROOT / "notebooks/workload").glob("*/*.py")):
+    for path in sorted(notebooks()):
         found = sections(path.read_text())
         headings = [heading for heading, _ in found]
         assert headings[:2] == ["Initialization", "Imports"] and headings[-1] == "Execution", (path.name, headings)
@@ -96,3 +108,18 @@ def test_workflows_and_notebooks_live_in_matching_subproject_folders():
     assert not list(workflows.glob("*.json")) and not list(workload.glob("*.py"))
     projects = {path.name for path in workflows.iterdir() if path.is_dir()}
     assert projects and projects <= {path.name for path in workload.iterdir() if path.is_dir()}
+
+
+def test_layer_folders_are_only_the_five_medallion_folders_one_level_deep():
+    for project in (REPOSITORY_ROOT / "notebooks/workload").iterdir():
+        if project.is_dir() and project.name != "__pycache__":
+            for folder in project.iterdir():
+                if folder.is_dir() and folder.name != "__pycache__":
+                    assert folder.name in LAYERS, f"{folder}: not a layer folder ({', '.join(LAYERS)})"
+                    assert not [p for p in folder.iterdir() if p.is_dir() and p.name != "__pycache__"], f"{folder}: no deeper folders"
+
+
+def test_the_initialization_path_follows_the_notebook_depth():
+    root = REPOSITORY_ROOT / "notebooks/workload"
+    assert initialization(root / "sample/generate_tpch.py")[1] == "# %run ../../common/jupyter_environment_resolver.py"
+    assert initialization(root / "sample/bronze/load.py")[1] == "# %run ../../../common/jupyter_environment_resolver.py"

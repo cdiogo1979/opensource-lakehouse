@@ -86,7 +86,15 @@ requirements-dev.txt       Test and lint tools
 AGENTS.md                  Rules for coding agents working here, including the subproject layout
 ```
 
-**Subprojects**: workflows and their notebooks are grouped by subproject, with the same folder name under `workflows/` and `notebooks/workload/` (here `sample`). A workflow in `workflows/<project>/` runs entry points from `notebooks/workload/<project>/`. DAG IDs don't include the subproject (`default-uat-generate_tpch`), so workflow names are unique across the repository. Shared code stays in `notebooks/common/`. To add a subproject, create both folders; see [AGENTS.md](AGENTS.md).
+**Subprojects**: workflows and their notebooks are grouped by subproject, with the same folder name under `workflows/` and `notebooks/workload/` (here `sample`). A workflow in `workflows/<project>/` runs entry points from `notebooks/workload/<project>/`.
+
+**Layers inside a subproject's notebooks** (workflows have none): `notebooks/workload/<project>/` may hold the medallion layer folders `bronze/` (raw ingestion), `silver/` (cleaned or conformed data), `gold/` (curated, consumption-ready data), plus `ops/` (operational notebooks run as needed: migrations, data patches, maintenance) and `deploy/` (deployment of assets the pipelines don't create, such as views). A workflow names a layer notebook as `"entrypoint": "bronze/load_orders.py"`. Only these five folders, one level deep; notebooks may also sit directly in the subproject folder, as `sample`'s do today:
+
+```text
+notebooks/workload/<project>/
+  bronze/      silver/      gold/      ops/      deploy/      (and notebooks directly in the folder)
+```
+ DAG IDs don't include the subproject (`default-uat-generate_tpch`), so workflow names are unique across the repository. Shared code stays in `notebooks/common/`. To add a subproject, create both folders; see [AGENTS.md](AGENTS.md).
 
 ## Workflow JSON reference
 
@@ -129,7 +137,7 @@ One file per DAG: `workflows/<project>/<name>.json`. A complete example:
 | Field | Required | Type and limits | Meaning |
 |---|---|---|---|
 | `name` | yes | as workflow `name`; unique in the workflow | Task ID `submit_<name>` |
-| `entrypoint` | yes | a `.py` file name that exists in `notebooks/workload/<project>/` (no folders) | The job to run; one file may serve several tasks |
+| `entrypoint` | yes | a `.py` file name that exists in `notebooks/workload/<project>/`, or `<layer>/<file>.py` for a notebook in a layer folder (`bronze`, `silver`, `gold`, `ops`, `deploy`) | The job to run; one file may serve several tasks |
 | `runs_after` | no | list of other task names in this workflow, default `[]` | Wait for these tasks; no task may wait for itself, and the order may not loop |
 | `args` | no | list of at most 50 strings (each 1–500 printable characters), default `[]` | Passed to the entry point after `--` (see [entry points](#writing-an-entry-point)) |
 | `retries` | no | integer 0–10 | Airflow retries for this task |
@@ -157,7 +165,7 @@ load_workflows(globals(), __file__)
 
 ## Writing an entry point
 
-An entry point is a Python file in `notebooks/workload/<project>/`. In Airflow it's started as:
+An entry point is a Python file in `notebooks/workload/<project>/` or one of its layer folders. In Airflow it's started as:
 
 ```text
 spark-submit --master local[*] /opt/lakehouse-bundle/notebooks/workload/<project>/<entrypoint> \
@@ -308,7 +316,7 @@ CI doesn't deploy anything: Airflow picks up merged changes from Git by itself.
 ## How-to
 
 **Add a workflow**
-1. Write the job in `notebooks/workload/<project>/<job>.py` (see [entry points](#writing-an-entry-point)) and try it in Jupyter with `dev`.
+1. Write the job in `notebooks/workload/<project>/<layer>/<job>.py`, in the layer folder that matches its role (see [entry points](#writing-an-entry-point)), and try it in Jupyter with `dev`. In a layer folder, the Initialization's `%run` path is `../../../common/jupyter_environment_resolver.py`.
 2. Add `workflows/<project>/<name>.json` with `apiVersion`, `name` (unique in the repository), `schedule` and `tasks`.
 3. Open a pull request into `uat`. `<product>_cd` validates and tests the branch.
 4. Merge. Within about 5 minutes Airflow shows `<product>-uat-<name>`; run it there.
