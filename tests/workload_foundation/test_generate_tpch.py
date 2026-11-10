@@ -50,7 +50,7 @@ def test_the_counts_duckdb_generated_meet_the_rules():
 def test_the_workflow_runs_every_entity_as_its_own_task():
     workflow = json.loads((REPOSITORY_ROOT / "workflows/sample/generate_tpch.json").read_text(encoding="utf-8"))
     assert [task["name"] for task in workflow["tasks"]] == [f"generate_{entity}" for entity in ENTITIES]
-    assert all(task["entrypoint"] == "generate_tpch.py" and task["args"] == ["--entity", task["name"].removeprefix("generate_")] for task in workflow["tasks"])
+    assert all(task["entrypoint"] == "other/generate_tpch.py" and task["args"] == ["--entity", task["name"].removeprefix("generate_")] for task in workflow["tasks"])
     assert all("runs_after" not in task for task in workflow["tasks"])
 
 

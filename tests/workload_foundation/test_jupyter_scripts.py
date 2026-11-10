@@ -11,7 +11,7 @@ REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
 
 
 def test_the_resolver_finds_the_clone_that_holds_the_notebook(tmp_path):
-    assert resolver.find_repository_root(REPOSITORY_ROOT / "notebooks" / "workload" / "sample") == REPOSITORY_ROOT
+    assert resolver.find_repository_root(REPOSITORY_ROOT / "notebooks" / "workload" / "sample" / "other") == REPOSITORY_ROOT
     with pytest.raises(FileNotFoundError, match="inside a clone"):
         resolver.find_repository_root(tmp_path)
 
@@ -51,7 +51,7 @@ def test_entry_points_run_the_scripts_from_common():
     assert not (REPOSITORY_ROOT / "notebooks/workload/jupyter_helper.py").exists()
 
 
-LAYERS = ("bronze", "silver", "gold", "ops", "deploy")
+LAYERS = ("bronze", "silver", "gold", "ops", "deploy", "other")
 
 
 def notebooks():

@@ -28,7 +28,7 @@
 # !lakehouse-install-requirements ~/work/opensource-lakehouse-sample-dp
 
 # %%
-# %run ../../common/jupyter_environment_resolver.py
+# %run ../../../common/jupyter_environment_resolver.py
 
 # %% [markdown]
 # ## Imports
@@ -60,7 +60,7 @@ TASK_ARGUMENTS = {"entity": {"required": True}, "scale_factor": {"default": "0.0
 WIDGET_LIST = ["entity", "scale_factor"]
 
 # %%
-# %run ../../common/jupyter_input_widget_helper.py
+# %run ../../../common/jupyter_input_widget_helper.py
 
 # %% [markdown]
 # ## TPC-H rules

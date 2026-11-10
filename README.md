@@ -74,9 +74,10 @@ notebooks/
     jupyter_input_widget_helper.py    Jupyter input widgets for a job's task arguments (%run)
   workload/                Spark jobs (Jupytext py:percent files, also notebooks), per subproject
     sample/                  subproject "sample" (the entry points of workflows/sample/)
-      test_environment.py      creates the smoke table
-      count_sample_rows.py     counts its rows
-      generate_tpch.py         generates TPC-H data with DuckDB and checks one entity's row count
+      other/                   notebooks that fit no medallion layer
+        test_environment.py      creates the smoke table
+        count_sample_rows.py     counts its rows
+        generate_tpch.py         generates TPC-H data with DuckDB and checks one entity's row count
 configs/                   Non-secret settings: dev.yml, uat.yml, prod.yml, optional <product>/<env>.yml
 tests/                     pytest and Hypothesis tests for the helpers and workloads
 scripts/code_quality.sh    lint, flake8, bandit (used by CI)
@@ -88,11 +89,11 @@ AGENTS.md                  Rules for coding agents working here, including the s
 
 **Subprojects**: workflows and their notebooks are grouped by subproject, with the same folder name under `workflows/` and `notebooks/workload/` (here `sample`). A workflow in `workflows/<project>/` runs entry points from `notebooks/workload/<project>/`.
 
-**Layers inside a subproject's notebooks** (workflows have none): `notebooks/workload/<project>/` may hold the medallion layer folders `bronze/` (raw ingestion), `silver/` (cleaned or conformed data), `gold/` (curated, consumption-ready data), plus `ops/` (operational notebooks run as needed: migrations, data patches, maintenance) and `deploy/` (deployment of assets the pipelines don't create, such as views). A workflow names a layer notebook as `"entrypoint": "bronze/load_orders.py"`. Only these five folders, one level deep; notebooks may also sit directly in the subproject folder, as `sample`'s do today:
+**Layers inside a subproject's notebooks** (workflows have none): `notebooks/workload/<project>/` may hold the medallion layer folders `bronze/` (raw ingestion), `silver/` (cleaned or conformed data), `gold/` (curated, consumption-ready data), plus `ops/` (operational notebooks run as needed: migrations, data patches, maintenance), `deploy/` (deployment of assets the pipelines don't create, such as views) and `other/` (notebooks that fit no medallion layer; `sample`'s three notebooks live there). A workflow names a layer notebook as `"entrypoint": "bronze/load_orders.py"` or `"other/generate_tpch.py"`. Only these six folders, one level deep:
 
 ```text
 notebooks/workload/<project>/
-  bronze/      silver/      gold/      ops/      deploy/      (and notebooks directly in the folder)
+  bronze/      silver/      gold/      ops/      deploy/      other/
 ```
  DAG IDs don't include the subproject (`default-uat-generate_tpch`), so workflow names are unique across the repository. Shared code stays in `notebooks/common/`. To add a subproject, create both folders; see [AGENTS.md](AGENTS.md).
 
@@ -137,7 +138,7 @@ One file per DAG: `workflows/<project>/<name>.json`. A complete example:
 | Field | Required | Type and limits | Meaning |
 |---|---|---|---|
 | `name` | yes | as workflow `name`; unique in the workflow | Task ID `submit_<name>` |
-| `entrypoint` | yes | a `.py` file name that exists in `notebooks/workload/<project>/`, or `<layer>/<file>.py` for a notebook in a layer folder (`bronze`, `silver`, `gold`, `ops`, `deploy`) | The job to run; one file may serve several tasks |
+| `entrypoint` | yes | a `.py` file name that exists in `notebooks/workload/<project>/`, or `<layer>/<file>.py` for a notebook in a layer folder (`bronze`, `silver`, `gold`, `ops`, `deploy`, `other`) | The job to run; one file may serve several tasks |
 | `runs_after` | no | list of other task names in this workflow, default `[]` | Wait for these tasks; no task may wait for itself, and the order may not loop |
 | `args` | no | list of at most 50 strings (each 1–500 printable characters), default `[]` | Passed to the entry point after `--` (see [entry points](#writing-an-entry-point)) |
 | `retries` | no | integer 0–10 | Airflow retries for this task |
@@ -205,7 +206,7 @@ arguments = parse_task_args(TASK_ARGUMENTS)     # {"date": "2026-11-10", "mode":
   5. **Execution**: only the `if __name__ == "__main__":` block that runs the job.
 
   CI checks this order.
-- **Start every notebook with the Initialization section** (see [Working in Jupyter](#working-in-jupyter)): `# !lakehouse-install-requirements ~/work/opensource-lakehouse-sample-dp` and `# %run ../../common/jupyter_environment_resolver.py`, right after the title cell. CI checks that every file in `notebooks/workload/` has it.
+- **Start every notebook with the Initialization section** (see [Working in Jupyter](#working-in-jupyter)): `# !lakehouse-install-requirements ~/work/opensource-lakehouse-sample-dp` and `# %run ../../../common/jupyter_environment_resolver.py` (from a layer folder), right after the title cell. CI checks that every file in `notebooks/workload/` has it.
 - **Stop Spark at the end**: call `spark.stop()` in a `finally:` block. Put the run code under `if __name__ == "__main__":` so tests and notebooks can import the file without starting Spark.
 - **Packages**: entry points run on the platform's Python 3.10 environment plus this repository's `requirements.txt`; see [Python packages](#python-packages).
 
@@ -251,7 +252,7 @@ Workload code runs on one Python environment, the same in Airflow's Spark contai
 ## Working in Jupyter
 
 1. Sign in to JupyterHub (<http://jupyterhub.localhost:8000>) with your platform account. You need to be a developer or analyst of the product.
-2. Clone this repository into your workspace and open a file from `notebooks/workload/<project>/` (for example `notebooks/workload/sample/`) as a notebook. Jupytext reads the `py:percent` format.
+2. Clone this repository into your workspace and open a file from `notebooks/workload/<project>/` (for example `notebooks/workload/sample/other/`) as a notebook. Jupytext reads the `py:percent` format.
 3. Run the **Initialization** section at the top of the notebook. Every notebook starts with it:
 
    ```python
@@ -259,7 +260,7 @@ Workload code runs on one Python environment, the same in Airflow's Spark contai
    # !lakehouse-install-requirements ~/work/opensource-lakehouse-sample-dp
 
    # %%
-   # %run ../../common/jupyter_environment_resolver.py
+   # %run ../../../common/jupyter_environment_resolver.py
    ```
 
    In the `.py` file both lines are comments (Jupytext's convention), so `spark-submit` in Airflow skips them; opened in Jupyter they become a shell command and a `%run`.
@@ -275,7 +276,7 @@ The path `~/work/opensource-lakehouse-sample-dp` assumes the clone is in `~/work
 
 ```python
 WIDGET_LIST = ["entity", "scale_factor"]
-# %run ../../common/jupyter_input_widget_helper.py
+# %run ../../../common/jupyter_input_widget_helper.py
 ```
 
 `parse_task_args` reads the fields (an empty field is "not given"); running the helper again keeps what you typed. Without widgets, it reads a `TASK_ARGS` list instead, for example `TASK_ARGS = ["--entity", "orders"]`.
@@ -291,7 +292,7 @@ lakehouse-install-requirements        # or: lakehouse-install-requirements path/
 
 The packages go to `~/.local/lakehouse/python3.10`, which lasts only for the current server session (only `~/work` is kept across restarts): **rerun the command after every server start**. Running the command for another repository adds its packages too. When the platform's lock changes, the command asks you to rerun it with `--reset`, which empties that folder first.
 
-**TPC-H in a notebook**: open `notebooks/workload/sample/generate_tpch.py`, run the Initialization section and the cells up to the widgets, type an entity (for example `orders`), and run the remaining cells.
+**TPC-H in a notebook**: open `notebooks/workload/sample/other/generate_tpch.py`, run the Initialization section and the cells up to the widgets, type an entity (for example `orders`), and run the remaining cells.
 
 `workflows/` and `dags/` play no part in Jupyter. An entry point that works in Jupyter with `dev` should behave the same in Airflow with `uat` and `prod`, apart from data and permissions.
 

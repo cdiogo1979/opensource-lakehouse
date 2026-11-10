@@ -19,7 +19,7 @@
 # !lakehouse-install-requirements ~/work/opensource-lakehouse-sample-dp
 
 # %%
-# %run ../../common/jupyter_environment_resolver.py
+# %run ../../../common/jupyter_environment_resolver.py
 
 # %% [markdown]
 # ## Imports

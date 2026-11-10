@@ -5,13 +5,13 @@
   "schedule": null,
   "tags": ["tpch"],
   "tasks": [
-    {"name": "generate_region", "entrypoint": "generate_tpch.py", "args": ["--entity", "region"]},
-    {"name": "generate_nation", "entrypoint": "generate_tpch.py", "args": ["--entity", "nation"]},
-    {"name": "generate_supplier", "entrypoint": "generate_tpch.py", "args": ["--entity", "supplier"]},
-    {"name": "generate_customer", "entrypoint": "generate_tpch.py", "args": ["--entity", "customer"]},
-    {"name": "generate_part", "entrypoint": "generate_tpch.py", "args": ["--entity", "part"]},
-    {"name": "generate_partsupp", "entrypoint": "generate_tpch.py", "args": ["--entity", "partsupp"]},
-    {"name": "generate_orders", "entrypoint": "generate_tpch.py", "args": ["--entity", "orders"]},
-    {"name": "generate_lineitem", "entrypoint": "generate_tpch.py", "args": ["--entity", "lineitem"]}
+    {"name": "generate_region", "entrypoint": "other/generate_tpch.py", "args": ["--entity", "region"]},
+    {"name": "generate_nation", "entrypoint": "other/generate_tpch.py", "args": ["--entity", "nation"]},
+    {"name": "generate_supplier", "entrypoint": "other/generate_tpch.py", "args": ["--entity", "supplier"]},
+    {"name": "generate_customer", "entrypoint": "other/generate_tpch.py", "args": ["--entity", "customer"]},
+    {"name": "generate_part", "entrypoint": "other/generate_tpch.py", "args": ["--entity", "part"]},
+    {"name": "generate_partsupp", "entrypoint": "other/generate_tpch.py", "args": ["--entity", "partsupp"]},
+    {"name": "generate_orders", "entrypoint": "other/generate_tpch.py", "args": ["--entity", "orders"]},
+    {"name": "generate_lineitem", "entrypoint": "other/generate_tpch.py", "args": ["--entity", "lineitem"]}
   ]
 }

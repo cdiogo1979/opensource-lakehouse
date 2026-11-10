@@ -6,18 +6,18 @@
   "tasks": [
     {
       "name": "test_environment_first",
-      "entrypoint": "test_environment.py"
+      "entrypoint": "other/test_environment.py"
     },
     {
       "name": "test_environment_second",
-      "entrypoint": "test_environment.py",
+      "entrypoint": "other/test_environment.py",
       "runs_after": [
         "test_environment_first"
       ]
     },
     {
       "name": "count_sample_rows",
-      "entrypoint": "count_sample_rows.py",
+      "entrypoint": "other/count_sample_rows.py",
       "runs_after": [
         "test_environment_first"
       ]
