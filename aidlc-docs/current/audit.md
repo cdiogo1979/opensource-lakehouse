@@ -182,3 +182,23 @@ The complete audit history through intent `20261020-lakehouse-workload-foundatio
 **Email**: cdiogo@gmail.com
 
 ---
+
+## Build and Test — StarRocks Login After FE Restart
+**Timestamp**: 2026-11-11T00:55:00Z
+**User Input**: "why do i get now in dbeaver empty password is not allowed for simple authentication , did starocks crash?"
+**AI Response**: "The StarRocks FE restarted once at 00:27:49 (Docker on-failure policy, 2 GiB limit) during the first UAT run's memory pressure; BE and LDAP kept running. The FE restart reset the runtime LDAP bind DN pattern, so StarRocks fell back to an empty root bind, which LDAP refuses. Re-applied it with the platform's documented step python3 infra/starrocks/bootstrap-starrocks.py --runtime-only (LDAP password login: set). Platform follow-up: re-apply the pattern automatically after an FE restart."
+**Context**: CONSTRUCTION - Build and Test; platform runtime recovery (no code change); APG-03.
+**User**: cdiogo1979
+**Email**: cdiogo@gmail.com
+
+---
+
+## Build and Test — Second and Third UAT Runs
+**Timestamp**: 2026-11-11T03:20:00Z
+**User Input**: (platform recoveries approved in the infra repository: "Restart RustFS (Recommended)"; the StarRocks metadata intent 20261111-starrocks-metadata-access was opened and closed in between)
+**AI Response**: "Second run manual__2026-11-11T00:43:46 (7a07ce9, two lanes): tpch_region_db_brz_load failed both attempts with Polaris ServiceFailureException (RustFS read timed out) on tableExists; cause: RustFS reported itself not ready (storage lifecycle recovery timing out since the memory event); restarted RustFS (healthy). Third run manual__2026-11-11T00:53:34: 21/21 tasks succeeded in about 3.5 minutes; the two lanes ran one bronze and one silver job at a time."
+**Context**: CONSTRUCTION - Build and Test; APG-03.
+**User**: cdiogo1979
+**Email**: cdiogo@gmail.com
+
+---

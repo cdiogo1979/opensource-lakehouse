@@ -48,6 +48,8 @@
 
 - Platform: a parallelism limit per workflow (for example `max_active_tasks`) and per-job Spark memory, so a DAG run's tasks can't exhaust the shared Spark container (found in Build and Test, 2026-11-11).
 
+- Platform: StarRocks loses its runtime LDAP bind pattern when the FE restarts (seen 2026-11-11 after memory pressure); re-apply it automatically (for example from the FE healthcheck or a scheduled reconcile) instead of only at `lakehouse.sh start`.
+
 ## Intent Lifecycle
 <!-- intent-lifecycle:start -->
 ```json
