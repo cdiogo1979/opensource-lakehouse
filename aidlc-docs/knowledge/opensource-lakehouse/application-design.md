@@ -20,6 +20,7 @@ This repository is a lakehouse **data product repository** for the `opensource-l
 ## Naming conventions (AGENTS.md)
 - Notebooks `<layer>_<action>.py`; bronze tables `<project>_<entity>_<source>_brz`; silver tables `<project>_<entity>`; table locations `<storage_path>/<catalog_name>/<database_name>/<table>`; workflows `<project>_<purpose>`; tasks `<target_table>_load`; checkpoints `<checkpoint_path>/<project>/<target_table>`.
 - All tables of an environment live in its one namespace (`database_name`): products can't create namespaces.
+- Materialized views: `materialized_views/<project>/<name>.sql`, named `mv_<project>_<purpose>` (or for an aggregate's dimensions), one `CREATE MATERIALIZED VIEW ${mv_database}.<name>` statement each with `${catalog}.${namespace}.<table>` sources; developed by hand in the dev MV database, deployed to UAT and prod by the platform as the writer.
 
 ## Notebook standard
 Title cell (purpose, inputs, effects); `## Initialization` (`# !lakehouse-install-requirements ~/work/opensource-lakehouse-sample-dp`, `# %run ../../../common/jupyter_environment_resolver.py`, commented in Airflow); `## Imports`; for task arguments a `## Task arguments` section (`TASK_ARGS_DEFINITION`, the arguments the job accepts, used in Airflow and Jupyter; then `TASK_ARGS_VALUES`, the Jupyter-only values with a working example; each with a comment; no input widgets); the job's own sections; `## Execution` with only the `if __name__ == "__main__":` block, which stops Spark in `finally:`. A test checks the structure.

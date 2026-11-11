@@ -6,6 +6,7 @@ This is a lakehouse **data product repository**. [README.md](README.md) is the c
 - `workflows/<project>/<name>.json`: Airflow DAG declarations (workflow JSON v1, see the README), grouped by subproject. This is the only way to declare DAGs.
 - `notebooks/workload/<project>/` (and its layer folders `bronze/`, `silver/`, `gold/`, `ops/`, `deploy/`, `other/`): the subproject's Spark entry points in Jupytext `py:percent` format, runnable by `spark-submit` and as notebooks.
 - `notebooks/common/`: shared helpers (`config_loader.py`, `cli.py`, `job_runtime.py`), used by Airflow runs and Jupyter, and the Jupyter `%run` script `jupyter_environment_resolver.py`.
+- `materialized_views/<project>/<name>.sql`: StarRocks materialized views, one `CREATE MATERIALIZED VIEW ${mv_database}.<name>` statement per file, deployed by the platform to UAT and prod as the product writer.
 - `configs/<env>.yml` and optional `configs/<product>/<env>.yml`: non-secret settings for `prod`, `uat`, `dev`.
 - `dags/lakehouse.py`: the platform stub. **Never edit it, and never add files to `dags/`.**
 - `requirements.txt`: optional extra Python packages for the workload code, installed by the platform at each Airflow run and with `lakehouse-install-requirements` in Jupyter.
@@ -68,7 +69,8 @@ aidlc-docs/knowledge/
   - **bronze tables**: `<project>_<entity>_<source>_brz` (`tpch_region_db_brz`, source `db`); **silver tables**: `<project>_<entity>` (`tpch_region`). All tables live in the environment's one namespace (`database_name`), so the layer is part of the name;
   - **table locations**: `<storage_path>/<catalog_name>/<database_name>/<table>`, set when the table is created;
   - **workflows**: `<project>_<purpose>` (`tpch_medallion`); **tasks**: `<target_table>_load` (`tpch_region_db_brz_load`, `tpch_region_load`);
-  - **checkpoints**: `<checkpoint_path>/<project>/<target_table>` (`.../checkpoints/tpch/tpch_region`).
+  - **checkpoints**: `<checkpoint_path>/<project>/<target_table>` (`.../checkpoints/tpch/tpch_region`);
+  - **materialized views**: `mv_<project>_<purpose>` (`mv_tpch_current`), or named for the dimensions an aggregate keeps (`mv_tpch_day_nation_segment`).
 - **Expected artifacts** when adding or changing a workload, updated together: the notebook in `notebooks/workload/<project>/`, its workflow in `workflows/<project>/` when it is scheduled or orchestrated, environment values in `configs/`, and its tests. Use names that make clear which notebook and settings a workflow uses.
 - **Durable design knowledge** (AI-DLC): one application design per subproject and one consolidated functional design per component under `aidlc-docs/knowledge/<project>/`; drafts and approvals stay in `aidlc-docs/current/` and are promoted at intent closure, with the originals archived.
 
@@ -82,6 +84,11 @@ aidlc-docs/knowledge/
   - start every notebook in `notebooks/workload/<project>/` with the Initialization section (after the title cell): `# !lakehouse-install-requirements ~/work/opensource-lakehouse-sample-dp` and `# %run ../../../common/jupyter_environment_resolver.py` (from a layer folder; `../../common/...` for a notebook directly in the subproject folder); the resolver defines `spark` and `config` in Jupyter;
   - a notebook with task arguments has a `## Task arguments` section after `## Imports`: `TASK_ARGS_DEFINITION` (for `parse_task_args`), then `TASK_ARGS_VALUES`, a dict of argument names to string values with a working example, read only in Jupyter (no input widgets); the Execution block parses and checks the arguments (`check_arguments`), prints `<notebook>.py: <message>` and exits 2 on a bad value in Airflow, and raises in Jupyter;
   - keep run code under `if __name__ == "__main__":` and stop Spark in `finally:`.
+- **Materialized views**:
+  - develop and test a view by hand in the dev MV database first, then declare it in `materialized_views/<project>/<name>.sql`; never create views in UAT or prod by hand;
+  - one statement per file: `CREATE MATERIALIZED VIEW ${mv_database}.<file name>`, a `COMMENT` describing it, a `REFRESH` clause, and `${catalog}.${namespace}.<table>` for every source table; no other placeholder or statement; read silver (or gold) tables, never bronze;
+  - don't write the `lakehouse-mv` marker yourself: the platform adds it; removing a file drops the deployed view;
+  - add a test for the view's intent (as `tests/tpch/test_materialized_views.py` does).
 - **Configs**:
   - the loader accepts only `dev`, `uat` and `prod`, requires `storage_path` and `database_name`, and never falls back across environments;
   - values must be the product's own namespaces and buckets;

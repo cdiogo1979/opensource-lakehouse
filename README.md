@@ -17,9 +17,10 @@ The same code runs in two places:
 8. [Configs and environments](#configs-and-environments)
 9. [Working in Jupyter](#working-in-jupyter)
 10. [CI in Jenkins](#ci-in-jenkins)
-11. [The tpch subproject](#the-tpch-subproject)
-12. [How-to](#how-to)
-13. [Limits](#limits)
+11. [Materialized views](#materialized-views)
+12. [The tpch subproject](#the-tpch-subproject)
+13. [How-to](#how-to)
+14. [Limits](#limits)
 
 ## What lives where
 
@@ -83,6 +84,10 @@ notebooks/
     tpch/                    subproject "tpch" (the entry points of workflows/tpch/)
       bronze/bronze_ingestion.py    appends one generated TPC-H entity to its bronze table
       silver/silver_processing.py   streams bronze changes and merges them into the silver table
+materialized_views/        StarRocks materialized views, deployed by the platform to UAT and prod, per subproject
+  tpch/
+    mv_tpch_current.sql             orders of the latest load day, with all their details
+    mv_tpch_day_nation_segment.sql  sales per order date, customer nation and market segment
 configs/                   Non-secret settings: dev.yml, uat.yml, prod.yml, optional <product>/<env>.yml
 tests/                     pytest and Hypothesis tests for the helpers and workloads
 scripts/code_quality.sh    lint, flake8, bandit (used by CI)
@@ -323,6 +328,16 @@ The pipeline stages are:
 
 CI doesn't deploy anything: Airflow picks up merged changes from Git by itself.
 
+## Materialized views
+
+StarRocks materialized views speed up queries on the product's tables (StarRocks rewrites matching queries to read them). They travel like code:
+
+1. **Develop and test in dev**: create the view by hand in the dev MV database (`default_lhdev`, over `lakehouse_dev.default_lhdev` tables; your developer role may author there), query it, refresh it.
+2. **Declare it**: save the statement as `materialized_views/<project>/<name>.sql`, the file name being the view name (`mv_<project>_<purpose>`), with `${mv_database}`, `${catalog}` and `${namespace}` in place of the dev names. One statement per file, starting `CREATE MATERIALIZED VIEW ${mv_database}.<name>`; no other statement and no other placeholder. CI (`lakehouse-validate-workflows`) checks this.
+3. **Merge to `uat`, then `main`**: every Airflow run of the bundle starts with the platform's `deploy_materialized_views` task, and `<bundle>-deploy_materialized_views` runs it on demand. It fills in the environment's names and, as the product's writer, creates new views, replaces changed ones (swapped in without a gap), drops the ones whose file you removed, and leaves the rest alone. A view whose source table doesn't exist yet is skipped until a later run.
+
+The deploy adds `lakehouse-mv sha256=...` to the front of each view's comment; it uses that to tell its views from hand-made ones. Deployed views belong to the writer, so they keep refreshing whoever leaves the product. Details: the platform's [data products reference](https://github.com/cdiogo1979/opensource-lakehouse-infra/blob/main/docs/reference/data-products.md#promoting-materialized-views).
+
 ## The tpch subproject
 
 TPC-H data through a bronze and a silver layer, in the environment's namespace:
@@ -335,6 +350,10 @@ TPC-H data through a bronze and a silver layer, in the environment's namespace:
 - **Workflow** `tpch_medallion` (manual): per entity, `tpch_<entity>_db_brz_load`, then `tpch_<entity>_load`, in two lanes: bronze tasks one after another, and each silver task after its bronze task and the previous silver task. A run's tasks share one Spark container, so at most two Spark jobs run at once (eight at once ran out of memory). Each task retries once after 60 s. Each run adds a bronze batch and merges it.
 - **Tables** are created by the first run at `<storage_path>/<catalog_name>/<database_name>/<table>`. The product's writer can't drop tables; ask an owner or the platform team.
 - **Conventions**: notebooks `<layer>_<action>.py`; bronze tables `<project>_<entity>_<source>_brz`; silver tables `<project>_<entity>`; workflows `<project>_<purpose>`; tasks `<target_table>_load`; checkpoints `<checkpoint_path>/<project>/<target_table>` (see [AGENTS.md](AGENTS.md)).
+- **Materialized views** (over the silver tables, refreshed hourly):
+  - `mv_tpch_current`: the orders of the **latest load day** (`DATE(bronze_ingestion_timestamp)` equal to the newest one in `tpch_orders`), one row per line item with the order, customer, nation, region, part and supplier details and `revenue` (`l_extendedprice * (1 - l_discount)`);
+  - `mv_tpch_day_nation_segment`: no order level; per order date, customer region and nation, and market segment: `orders`, `lines`, `quantity`, `revenue`, `avg_discount`. StarRocks rewrites matching queries on the silver tables to read it (for example revenue per region and segment for a year).
+  - `mv_tpch_current` is for reading by name (dashboards, analysts): its latest-load-day subquery means StarRocks won't rewrite base-table queries to it.
 - **Reprocess silver** (`silver_lookback_days`, default 0): with N > 0, silver deletes the entity's checkpoint and merges the bronze snapshots of the last N days again (safe: rows never get older).
   - **In Jupyter** (`dev`): set `"silver_lookback_days": "<N>"` in the notebook's `TASK_ARGS_VALUES`.
   - **In uat or prod**: trigger `<bundle>-tpch_medallion` with the platform's `task_args`, giving each silver task to reprocess its lookback, for example `{"tpch_region_load": {"silver_lookback_days": "7"}, "tpch_orders_load": {"silver_lookback_days": "7"}}`. The value is added as `--silver-lookback-days=7` for that run only; scheduled runs and the other tasks are unchanged, and the workflow file is never edited.

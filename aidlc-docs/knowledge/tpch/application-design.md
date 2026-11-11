@@ -8,6 +8,7 @@ The `tpch` subproject loads TPC-H data through a bronze and a silver layer, as t
 | Bronze ingestion | `notebooks/workload/tpch/bronze/bronze_ingestion.py` | Generates one TPC-H entity in memory with DuckDB and appends it to `tpch_<entity>_db_brz` |
 | Silver processing | `notebooks/workload/tpch/silver/silver_processing.py` | Streams the bronze table's new snapshots and merges the newest row per key into `tpch_<entity>` |
 | Workflow | `workflows/tpch/tpch_medallion.json` | 16 tasks, `tpch_<entity>_db_brz_load` and `tpch_<entity>_load`, in two lanes |
+| Materialized views | `materialized_views/tpch/` | `mv_tpch_current` (all details of the latest load day's orders; read by name: its subquery prevents query rewrite) and `mv_tpch_day_nation_segment` (sales per order date, customer region and nation, market segment; used by query rewrite once fresh); deployed by the platform to UAT and prod as the writer (platform intent 20261111-mv-promotion) |
 | Configs | `configs/{dev,uat,prod}.yml` | `storage_path`, `catalog_name`, `database_name`, `checkpoint_path` |
 | Tests | `tests/tpch/` | Pure rules with Hypothesis (P1 to P6); DuckDB generation; the workflow shape |
 
@@ -24,6 +25,7 @@ Shared helpers (`notebooks/common/`) are used unchanged: `start_spark_job`, `par
 | D6 | Silver counts rows inside `foreachBatch`, once per batch ID, and never reads silver from the outer session for its summary | The outer session caches a table it created; `recentProgress` repeats batches |
 | D7 | Two lanes: bronze tasks in sequence; each silver task after its bronze task and the previous silver task; one retry per task after 60 s | A run's tasks share one Spark container; eight concurrent jobs were OOM-killed in UAT |
 | D8 | The workflow passes no lookback; in uat or prod a lookback is a trigger value in the DAG's `task_args` (for example `{"tpch_region_load": {"silver_lookback_days": "7"}}`), in dev the notebook's `TASK_ARGS_VALUES` | The platform passes per-task trigger values as `--name=value` without templating (platform intent 20261111-airflow-task-params); no workflow edit |
+| D9 | Views read silver only and are declared files, never created by hand in UAT or prod; "current day" is the latest bronze load day, not `o_orderdate` (generated dates are 1992 to 1998) | User decisions (mv-promotion CR-1) |
 
 ## Platform contract used
 - `start_spark_job` (Airflow) or the resolver (Jupyter) for the session and config; Polaris tables at explicit locations; `s3ckpt://` checkpoints with the platform-mounted key (Airflow: the run's environment; Jupyter: dev for owners and developers).
