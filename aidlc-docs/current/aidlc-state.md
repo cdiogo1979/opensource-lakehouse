@@ -46,6 +46,8 @@
 ## Follow-ups
 - Platform intent (opensource-lakehouse-infra): workflow JSON params inserted into task args at run time without templating, so a silver lookback can be set when triggering a run (user, 2026-11-11: "Temporary edit now, params later").
 
+- Platform: a parallelism limit per workflow (for example `max_active_tasks`) and per-job Spark memory, so a DAG run's tasks can't exhaust the shared Spark container (found in Build and Test, 2026-11-11).
+
 ## Intent Lifecycle
 <!-- intent-lifecycle:start -->
 ```json

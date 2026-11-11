@@ -52,6 +52,10 @@
 - **Platform answer**: the closed `opensource-lakehouse-infra` intent `20261111-spark-s3-checkpoints` added streaming checkpoints: `checkpoint_path` uses the scheme `s3ckpt://<bucket>/checkpoints` (Iceberg's streaming offsets need a non-`s3` scheme), with a per-bucket checkpoint key mounted by the platform (Airflow: the run's environment; Jupyter: `dev` for owners and developers). Products do nothing else.
 - **Decision**: FR-5 uses that form; the open risk below is resolved (probe in `audit.md`).
 
+## Change request CR-3 (2026-11-11, Build and Test)
+- **Finding**: in the first UAT run all eight bronze jobs, then six silver jobs, ran at once in the run's single Spark container; two silver jobs were OOM-killed (exit 137) and the lineitem bronze table creation hit a Polaris to RustFS read timeout.
+- **Decision** (user: "Two lanes"): FR-6's workflow runs bronze tasks in sequence and each silver task after its bronze task and the previous silver task (at most two Spark jobs), with one retry per task after 60 s. A platform follow-up: a per-workflow parallelism limit.
+
 ## Non-Functional Requirements
 - **NFR-1 Idempotence**: rerunning bronze appends a new batch; rerunning silver with a lookback never changes a row to an older one.
 - **NFR-2 No secrets** in notebooks, configs or workflows.

@@ -27,7 +27,7 @@
 - **R18**: bronze `tpch_<entity>_db_brz`, silver `tpch_<entity>`; qualified name and location from the config (domain-entities.md). `storage_path` and `checkpoint_path` may end with `/`; exactly one `/` joins each part.
 
 ## Workflow
-- **R19**: `tpch_medallion`, `schedule: null`, tags `tpch`, `bronze`, `silver`; 16 tasks: `tpch_<entity>_db_brz_load` (`bronze/bronze_ingestion.py`, `--entity <entity>`) and `tpch_<entity>_load` (`silver/silver_processing.py`, `--entity <entity>`, `runs_after` its bronze task). No lookback argument (D8).
+- **R19**: `tpch_medallion`, `schedule: null`, tags `tpch`, `bronze`, `silver`; 16 tasks: `tpch_<entity>_db_brz_load` (`bronze/bronze_ingestion.py`, `--entity <entity>`) and `tpch_<entity>_load` (`silver/silver_processing.py`, `--entity <entity>`). **Two lanes** (Build and Test, CR-3): bronze tasks run one after another (region, nation, supplier, customer, part, partsupp, orders, lineitem); each silver task runs after its own bronze task and the previous silver task, so at most two Spark jobs share the run's container. Every task has `retries: 1`, `retry_delay_seconds: 60` (transient Polaris or RustFS timeouts); a retried bronze task may append its batch twice, which silver absorbs (newest row per key). No lookback argument (D8).
 
 ## Configs
 - **R20**: `checkpoint_path: "s3ckpt://bucket-default-dev/checkpoints"` (dev), `"s3ckpt://bucket-default-uat/checkpoints"` (uat), `"s3ckpt://bucket-default/checkpoints"` (prod).

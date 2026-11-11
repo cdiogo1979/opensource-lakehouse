@@ -172,3 +172,13 @@ The complete audit history through intent `20261020-lakehouse-workload-foundatio
 **Email**: cdiogo@gmail.com
 
 ---
+
+## Build and Test — First UAT Run; Two-Lane Workflow (CR-3)
+**Timestamp**: 2026-11-11T00:45:00Z
+**User Input**: AskUserQuestion: "Commit on a branch, merge into uat (Recommended)" / "why does the branch you created not showing in jenkins cd pipeline?" / "some tasks failed , can it be beacuse of insufficnet resources?" / AskUserQuestion: "Two lanes (Recommended)"
+**AI Response**: "Committed 91229a0 on branch tpch-medallion, fast-forwarded uat and pushed uat only. Explained that default_cd lists only branches with an open pull request (tpch-medallion is local only). First UAT run manual__2026-11-11T00:23:38: the eight bronze tasks started together, then six silver tasks; lineitem bronze failed (Polaris ServiceFailureException: RustFS read timed out during table create); part and partsupp silver exited 137 (OOM kill); the container reached about 5.5 GiB. Changed the workflow to two lanes with retries 1 / 60 s (CR-3; R19, D7, README updated; tests updated); platform parallelism limit recorded as a follow-up."
+**Context**: CONSTRUCTION - Build and Test; APG-03.
+**User**: cdiogo1979
+**Email**: cdiogo@gmail.com
+
+---
