@@ -2,46 +2,38 @@
 
 ## Project Information
 - **Project Type**: Brownfield
-- **Start Date**: 2026-11-11T13:30:00Z
-- **Current Stage**: CONSTRUCTION - Build and Test (approval pending)
-- **Intent**: Remove the Jupyter input widgets for task arguments, while keeping a way to set a notebook's parameters in Jupyter.
-- **Intent ID**: 20261111-notebook-task-args
-- **Previous Intent**: aidlc-docs/archive/20261111-tpch-medallion (closed)
-
-## Workspace State
-- **Existing Code**: Yes (branch `tpch-medallion`, clean)
-- **Programming Languages**: Python (Jupytext notebooks, pytest/Hypothesis)
-- **Workspace Root**: /Users/carlosdiogo/code_repo/opensource-lakehouse-sample-dp
-- **Reverse Engineering Needed**: No; focused read of `notebooks/common/cli.py`, `jupyter_input_widget_helper.py`, the three notebooks with widgets, their tests, README and AGENTS.md.
+- **Start Date**: 2026-11-11T19:50:00Z
+- **Current Stage**: CONSTRUCTION - Code Generation
+- **Intent**: Documentation only: a silver lookback in uat or prod is a trigger value (`task_args`, platform intent 20261111-airflow-task-params) instead of a temporary workflow edit. Merge to `uat` and `main`.
+- **Intent ID**: 20261111-silver-lookback-trigger
+- **Previous Intent**: aidlc-docs/archive/20261111-notebook-task-args (closed)
 
 ## Stage Progress
-- [x] Workspace Detection — brownfield; previous intent closed.
-- [x] Requirements Analysis — approved on 2026-11-11 (TASK_ARGS dict, working example, new branch).
-- [ ] User Stories, Application Design, Units Generation — SKIP.
-- [x] Workflow Planning — approved on 2026-11-11.
-- [ ] Functional, NFR, Infrastructure Design — SKIP.
-- [x] Code Generation — done on branch notebook-task-args (approval pending).
-- [x] Build and Test — code quality PASS; pytest 105 passed, 2 skipped (approval pending).
-- [ ] Deploy — pr_request.md written.
+- [x] Workspace Detection — brownfield; previous intent closed; branch silver-lookback-trigger from origin/main (no tracking).
+- [x] Requirements Analysis — minimal; approved in advance by the user ("proceed and merge ... as its just documentation").
+- [x] Workflow Planning — code generation (docs), build and test, deploy (merge to uat and main), closure.
+- [x] Code Generation — README and silver notebook title cell.
+- [x] Build and Test — pytest 105 passed, 2 skipped; code quality PASS.
+- [x] Deploy — fast-forward merge to uat and main (pre-approved).
 
 ## Extension Configuration
 | Extension | Enabled | Decided At |
 |---|---|---|
-| Security Baseline | No (no security surface changes) | Requirements Analysis |
-| Property-Based Testing | Yes (existing P4 property covers argument sources) | Requirements Analysis |
+| Security Baseline | No (documentation only) | Requirements Analysis |
+| Property-Based Testing | No (no code) | Requirements Analysis |
 | Resiliency Baseline | No | Requirements Analysis |
 
 ## Intent Lifecycle
 <!-- intent-lifecycle:start -->
 ```json
 {
-  "archive": "aidlc-docs/archive/20261111-notebook-task-args",
-  "current_stage": "CONSTRUCTION - Build and Test",
-  "intent_id": "20261111-notebook-task-args",
-  "name": "Notebook Task Arguments Without Widgets",
-  "previous_intent": "aidlc-docs/archive/20261111-tpch-medallion",
+  "archive": "aidlc-docs/archive/20261111-silver-lookback-trigger",
+  "current_stage": "DEPLOY - Deploy",
+  "intent_id": "20261111-silver-lookback-trigger",
+  "name": "Silver Lookback as a Trigger Value",
+  "previous_intent": "aidlc-docs/archive/20261111-notebook-task-args",
   "status": "CLOSED",
-  "summary": "aidlc-docs/archive/20261111-notebook-task-args/intent-summary.md"
+  "summary": "aidlc-docs/archive/20261111-silver-lookback-trigger/intent-summary.md"
 }
 ```
 <!-- intent-lifecycle:end -->

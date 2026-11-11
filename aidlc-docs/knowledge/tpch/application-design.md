@@ -23,7 +23,7 @@ Shared helpers (`notebooks/common/`) are used unchanged: `start_spark_job`, `par
 | D5 | `silver_lookback_days = N > 0` deletes the entity's checkpoint and restarts with `stream-from-timestamp` N days back; MERGE only takes newer rows, so a replay is idempotent | Repair without duplicates |
 | D6 | Silver counts rows inside `foreachBatch`, once per batch ID, and never reads silver from the outer session for its summary | The outer session caches a table it created; `recentProgress` repeats batches |
 | D7 | Two lanes: bronze tasks in sequence; each silver task after its bronze task and the previous silver task; one retry per task after 60 s | A run's tasks share one Spark container; eight concurrent jobs were OOM-killed in UAT |
-| D8 | The workflow passes no lookback; in uat or prod a lookback is a temporary workflow edit, in dev the notebook's `TASK_ARGS_VALUES` | The platform doesn't template task arguments (workflow params are a platform follow-up) |
+| D8 | The workflow passes no lookback; in uat or prod a lookback is a trigger value in the DAG's `task_args` (for example `{"tpch_region_load": {"silver_lookback_days": "7"}}`), in dev the notebook's `TASK_ARGS_VALUES` | The platform passes per-task trigger values as `--name=value` without templating (platform intent 20261111-airflow-task-params); no workflow edit |
 
 ## Platform contract used
 - `start_spark_job` (Airflow) or the resolver (Jupyter) for the session and config; Polaris tables at explicit locations; `s3ckpt://` checkpoints with the platform-mounted key (Airflow: the run's environment; Jupyter: dev for owners and developers).

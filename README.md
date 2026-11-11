@@ -337,7 +337,7 @@ TPC-H data through a bronze and a silver layer, in the environment's namespace:
 - **Conventions**: notebooks `<layer>_<action>.py`; bronze tables `<project>_<entity>_<source>_brz`; silver tables `<project>_<entity>`; workflows `<project>_<purpose>`; tasks `<target_table>_load`; checkpoints `<checkpoint_path>/<project>/<target_table>` (see [AGENTS.md](AGENTS.md)).
 - **Reprocess silver** (`silver_lookback_days`, default 0): with N > 0, silver deletes the entity's checkpoint and merges the bronze snapshots of the last N days again (safe: rows never get older).
   - **In Jupyter** (`dev`): set `"silver_lookback_days": "<N>"` in the notebook's `TASK_ARGS_VALUES`.
-  - **In uat or prod**: Airflow can't change a task's arguments at trigger time, so temporarily add `"--silver-lookback-days", "<N>"` to the silver tasks' `args` in `workflows/tpch/tpch_medallion.json`, merge, run the DAG once, then revert the change.
+  - **In uat or prod**: trigger `<bundle>-tpch_medallion` with the platform's `task_args`, giving each silver task to reprocess its lookback, for example `{"tpch_region_load": {"silver_lookback_days": "7"}, "tpch_orders_load": {"silver_lookback_days": "7"}}`. The value is added as `--silver-lookback-days=7` for that run only; scheduled runs and the other tasks are unchanged, and the workflow file is never edited.
 - **Limits**: bronze is append-only; a bronze snapshot that deletes or overwrites rows stops the silver stream. Each checkpoint must have one writer at a time, so don't run the same entity's silver from Jupyter and Airflow at once.
 
 ## How-to

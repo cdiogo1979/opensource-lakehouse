@@ -20,8 +20,8 @@
 #
 # In Airflow, `workflows/tpch/tpch_medallion.json` runs it once per entity with
 # `--entity <name>` (task `tpch_<entity>_load`, after its bronze task). For a
-# lookback in uat or prod, temporarily add `--silver-lookback-days <N>` to the
-# silver tasks' `args`, push, run, and revert. In Jupyter, run the Initialization
+# lookback in uat or prod, trigger the DAG with `task_args`, for example
+# `{"tpch_region_load": {"silver_lookback_days": "7"}}`; no workflow edit. In Jupyter, run the Initialization
 # cells, then set `entity` (and, optionally, `silver_lookback_days`) in
 # `TASK_ARGS_VALUES` under Task arguments, and run the remaining cells.
 

@@ -1,0 +1,53 @@
+{
+  "intent_id": "20261111-silver-lookback-trigger",
+  "name": "Silver Lookback as a Trigger Value",
+  "objective": "Document a silver lookback in uat or prod as a trigger value in task_args instead of a temporary workflow edit, and merge to uat and main.",
+  "date": "2026-11-11",
+  "scope": "Included: README, the silver notebook's title cell, canonical tpch D8. Excluded: code and workflow changes.",
+  "workstreams": [
+    "docs"
+  ],
+  "verification": {
+    "status": "passed",
+    "details": "construction/build-and-test/build-and-test-summary.md: pytest 105 passed, 2 skipped; code quality PASS; the trigger value itself verified live in the platform intent (UAT run live_task_args_1)."
+  },
+  "artifact_inventory_complete": true,
+  "summary": {
+    "major_requirements": [
+      "FR-1 docs say lookback is a task_args trigger value.",
+      "FR-2 D8 updated.",
+      "FR-3 merge to uat and main."
+    ],
+    "design_decisions": [
+      "Use the platform's per-task task_args instead of editing workflows."
+    ],
+    "implementation_decisions": [
+      "Fast-forward merges; branch created without tracking origin/main."
+    ],
+    "deviations": [
+      "All stages approved in advance by the user."
+    ],
+    "superseded_decisions": [
+      "D8's temporary workflow edit for a lookback in uat or prod."
+    ]
+  },
+  "canonical_updates": [
+    {
+      "path": "aidlc-docs/knowledge/tpch/application-design.md",
+      "content": "# Application Design \u2014 tpch\n\nThe `tpch` subproject loads TPC-H data through a bronze and a silver layer, as the repository's medallion example. History: the [TPC-H Medallion intent archive](../../archive/20261111-tpch-medallion/intent-summary.md). Repository-wide rules: [`../opensource-lakehouse/application-design.md`](../opensource-lakehouse/application-design.md).\n\n## Components\n| Component | Path | Role |\n|---|---|---|\n| Bronze ingestion | `notebooks/workload/tpch/bronze/bronze_ingestion.py` | Generates one TPC-H entity in memory with DuckDB and appends it to `tpch_<entity>_db_brz` |\n| Silver processing | `notebooks/workload/tpch/silver/silver_processing.py` | Streams the bronze table's new snapshots and merges the newest row per key into `tpch_<entity>` |\n| Workflow | `workflows/tpch/tpch_medallion.json` | 16 tasks, `tpch_<entity>_db_brz_load` and `tpch_<entity>_load`, in two lanes |\n| Configs | `configs/{dev,uat,prod}.yml` | `storage_path`, `catalog_name`, `database_name`, `checkpoint_path` |\n| Tests | `tests/tpch/` | Pure rules with Hypothesis (P1 to P6); DuckDB generation; the workflow shape |\n\nShared helpers (`notebooks/common/`) are used unchanged: `start_spark_job`, `parse_task_args` (with each notebook's `TASK_ARGS_DEFINITION` and Jupyter `TASK_ARGS_VALUES`), and the Jupyter resolver.\n\n## Decisions\n| # | Decision | Reason |\n|---|---|---|\n| D1 | Bronze is append-only, one batch (one Iceberg snapshot) per run, with `scale_factor` and `bronze_ingestion_timestamp` | Bronze changes are inserts, so silver's change feed is the stream of appended snapshots |\n| D2 | Silver uses Spark Structured Streaming on the bronze Iceberg table (`trigger(availableNow=True)`, `foreachBatch` `MERGE INTO`) with an `s3ckpt://` checkpoint | Durable incremental processing; the platform's streaming checkpoints (`checkpoint_path`) |\n| D3 | Each notebook defines its own names and locations from the config; no shared naming module | User decision; the conventions are documented in AGENTS.md |\n| D4 | Tables are created by the first run at an explicit location `<storage_path>/<catalog_name>/<database_name>/<table>` | The product writer can create but not drop tables |\n| D5 | `silver_lookback_days = N > 0` deletes the entity's checkpoint and restarts with `stream-from-timestamp` N days back; MERGE only takes newer rows, so a replay is idempotent | Repair without duplicates |\n| D6 | Silver counts rows inside `foreachBatch`, once per batch ID, and never reads silver from the outer session for its summary | The outer session caches a table it created; `recentProgress` repeats batches |\n| D7 | Two lanes: bronze tasks in sequence; each silver task after its bronze task and the previous silver task; one retry per task after 60 s | A run's tasks share one Spark container; eight concurrent jobs were OOM-killed in UAT |\n| D8 | The workflow passes no lookback; in uat or prod a lookback is a trigger value in the DAG's `task_args` (for example `{\"tpch_region_load\": {\"silver_lookback_days\": \"7\"}}`), in dev the notebook's `TASK_ARGS_VALUES` | The platform passes per-task trigger values as `--name=value` without templating (platform intent 20261111-airflow-task-params); no workflow edit |\n\n## Platform contract used\n- `start_spark_job` (Airflow) or the resolver (Jupyter) for the session and config; Polaris tables at explicit locations; `s3ckpt://` checkpoints with the platform-mounted key (Airflow: the run's environment; Jupyter: dev for owners and developers).\n- One Spark container per DAG run; tasks are separate `spark-submit` JVMs in it.\n- Jupyter servers have a 2 GiB limit: one Spark notebook at a time.\n\n## Data flow\nWorkflow \u2192 bronze (DuckDB `dbgen` in memory \u2192 append to `tpch_<entity>_db_brz`) \u2192 silver (availableNow stream of new bronze snapshots, checkpoint `<checkpoint_path>/tpch/tpch_<entity>` \u2192 newest row per key \u2192 `MERGE INTO tpch_<entity>`).\n\n## Verification and limits\n- **Verified 2026-11-11**: code quality clean; tests 112 local (2 DuckDB skips), 21 in the Spark runtime image; Jenkins `default_cd` on the pull request; UAT `default-uat-tpch_medallion` 21/21 on `7a07ce9`; Jupyter bronze and silver (incremental, rerun, lookback) in dev.\n- **Not run**: an Airflow lookback; a production run.\n- **Limits**: the writer can't drop tables; a lookback in uat or prod needs a workflow edit; one writer per checkpoint (a dev notebook and a dev stream share it); a replay rewrites matched silver files once (a new snapshot with unchanged values); bronze snapshots that delete or overwrite rows stop the stream.\n"
+    }
+  ],
+  "artifacts": [
+    "aidlc-docs/current/inception",
+    "aidlc-docs/current/construction",
+    "aidlc-docs/current/deploy",
+    "README.md",
+    "notebooks/workload/tpch/silver/silver_processing.py",
+    "aidlc-docs/knowledge/tpch/application-design.md"
+  ],
+  "cleanup_paths": [
+    "aidlc-docs/current/inception",
+    "aidlc-docs/current/construction",
+    "aidlc-docs/current/deploy"
+  ]
+}
