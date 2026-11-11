@@ -1,41 +1,33 @@
-# Open Source Lakehouse Application Design
+# Application Design — opensource-lakehouse-sample-dp (repository level)
 
-## Purpose and boundaries
+This repository is a lakehouse **data product repository** for the `opensource-lakehouse-infra` platform. It holds workflow declarations, Spark workloads (Jupytext notebooks), non-secret configuration and tests; the platform builds and runs the DAGs. Subproject design: [`../tpch/application-design.md`](../tpch/application-design.md). This replaces the retired design (Nessie, `DockerOperator`, an in-repository DAG factory, the bundle client). History: the [TPC-H Medallion intent archive](../../archive/20261111-tpch-medallion/intent-summary.md).
 
-This repository holds non-secret environment configuration, exported Python Spark workloads, and Airflow DAG sources. Airflow 3 Git DAG Bundles fetch versioned repository refs. A DAG validates environment configuration, then uses `DockerOperator` to launch the configured Spark job image and run `spark-submit`. The Spark workload uses Nessie-compatible catalog operations and S3-compatible storage. Jenkins runs compile and unit-test CI; it does not publish files to Airflow or change bundle refs.
-
-Airflow, its Git/Docker providers, the Docker daemon, Spark, Nessie, S3-compatible storage, runtime credentials, bundle configuration, and deployment reload behavior are externally managed.
-
-## Repository components
-
-| Component | Responsibility |
+## Platform contract
+| This repository | The platform (`opensource-lakehouse-infra`) |
 |---|---|
-| `configs/` | One YAML file for `dev`, `uat`, and `prod`; `storage_path` and `database_name` are required. Additional top-level and nested application settings are allowed. Secrets are external. |
-| `notebooks/common/config_loader.py` | Strictly load an explicitly selected YAML mapping, validate the required current workload keys, and preserve arbitrary nested values for applications. |
-| `notebooks/common/cli.py` | Parse standard `--environment` and optional `--config-dir` arguments for Spark entrypoints. |
-| `notebooks/workload/` | Exported Python Spark jobs, runnable with `spark-submit`. |
-| `dags/` | Thin DAG declarations, shared defaults/factory, and `.airflowignore` rules for helpers. |
-| `airflow_bundle_client.py` | Trusted operator CLI that changes only `lakehouse-dev.tracking_ref` to an allowed feature branch and invokes an externally configured apply/reload command. |
-| `Jenkinsfile` | Compile and unit-test CI only. |
+| `workflows/<project>/<name>.json` (workflow JSON v1) | The `lakehouse_dags` factory builds `<bundle>-<name>` DAGs from them; Airflow Git bundles `<product>-main` (prod) and `<product>-uat` (uat) |
+| `notebooks/workload/<project>/<layer>/*.py` | One Spark container per DAG run, the bundle mounted read-only; `spark-submit` per task |
+| `notebooks/common/` helpers | `lakehouse_spark.create_spark_session` (catalogs, token, redaction, checkpoint keys) |
+| `configs/<env>.yml`, optional `configs/<product>/<env>.yml` | The writer token per run; Polaris-vended storage credentials; checkpoint keys |
+| `dags/lakehouse.py` (fixed stub) | The CI validator `lakehouse-validate-workflows`, the shared Python 3.10 lock |
+| `requirements.txt` (pinned extras, e.g. `duckdb==1.5.6`) | Installed per Airflow run and with `lakehouse-install-requirements` in Jupyter |
 
-## Airflow bundle contract
+## Subprojects and layers
+- Each subproject has the same folder name under `workflows/` and `notebooks/workload/` (and `aidlc-docs/knowledge/`): today `sample` (notebooks in `other/`) and `tpch` (`bronze/`, `silver/`).
+- Notebook layer folders: `bronze/`, `silver/`, `gold/`, `ops/`, `deploy/`, `other/`, one level deep; workflows have no layers. A workflow's `entrypoint` is relative to `notebooks/workload/<project>/` (for example `bronze/bronze_ingestion.py`); full paths are refused.
+- DAG IDs don't include the subproject, so workflow names are unique across the repository.
 
-The example deployment has three stable bundles: `lakehouse-dev` follows an operator-selected feature branch, `lakehouse-uat` tracks `uat`, and `lakehouse-prod` tracks `main`. Each checks out the same root paths `dags/`, `configs/`, and `notebooks/`; a run must use the DAG, config, helpers, and Spark application from its recorded bundle commit.
+## Naming conventions (AGENTS.md)
+- Notebooks `<layer>_<action>.py`; bronze tables `<project>_<entity>_<source>_brz`; silver tables `<project>_<entity>`; table locations `<storage_path>/<catalog_name>/<database_name>/<table>`; workflows `<project>_<purpose>`; tasks `<target_table>_load`; checkpoints `<checkpoint_path>/<project>/<target_table>`.
+- All tables of an environment live in its one namespace (`database_name`): products can't create namespaces.
 
-Bundle name selects runtime config and DAG ID prefix:
+## Notebook standard
+Title cell (purpose, inputs, effects); `## Initialization` (`# !lakehouse-install-requirements ~/work/opensource-lakehouse-sample-dp`, `# %run ../../../common/jupyter_environment_resolver.py`, commented in Airflow); `## Imports`; for task arguments a `## Task arguments` section (`TASK_ARGUMENTS`, `WIDGET_LIST`, `# %run ../../../common/jupyter_input_widget_helper.py`); the job's own sections; `## Execution` with only the `if __name__ == "__main__":` block, which stops Spark in `finally:`. A test checks the structure.
 
-| Bundle name | Config | DAG ID prefix |
-|---|---|---|
-| `lakehouse-main` or `lakehouse-prod` | `prod.yml` | `main-` |
-| `lakehouse-uat` | `uat.yml` | `uat-` |
-| Other names, including `lakehouse-dev` | `dev.yml` | `dev-` |
+## Environments
+`prod` (bundle `-main`), `uat` (`-uat`), `dev` (Jupyter only). Configs need `storage_path`, `database_name`, usually `catalog_name`, and for streaming jobs `checkpoint_path: s3ckpt://<bucket>/checkpoints`. No secrets anywhere in the repository.
 
-The current observed local Airflow instance used `lakehouse-main`. The config example uses `lakehouse-dev`, `lakehouse-uat`, and `lakehouse-prod`; deployers must keep bundle names and the mapping intentional.
-
-The DAG factory validates the selected YAML, then submits the configured entrypoint through `DockerOperator` and `spark-submit`. The Docker daemon must see the same pinned bundle checkout path resolved by Airflow. `.airflowignore` prevents helper modules from being parsed as DAG declarations.
-
-## Security and operations
-
-Git credentials and runtime AWS/S3 credentials belong in Airflow connections or an approved secrets backend. Repository config, example bundle JSON, client settings, and DAGs contain no secret values. Feature branches execute with Airflow/Spark privileges, so branch selection is restricted to trusted operators and configured prefixes. UAT and production refs are not changed by the client.
-
-The Spark image, master, Docker socket/network, Airflow provider versions, bundle refresh interval, Git connection, target paths/database names, and apply/reload command are deployment inputs. Integration validation must confirm DAG parsing, bundle-version consistency, Docker mount visibility, Nessie connectivity, and S3 access before environment use.
+## Operational limits
+- A DAG run's tasks share one Spark container: order tasks (`runs_after`) so few Spark jobs run at once (the workflow format has no parallelism limit; platform follow-up).
+- A Jupyter server has 2 GiB: one notebook with a Spark session at a time (shut down a kernel before starting another).
+- The product writer can't drop tables or create namespaces.

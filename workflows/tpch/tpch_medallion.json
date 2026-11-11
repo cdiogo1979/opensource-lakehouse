@@ -1,0 +1,25 @@
+{
+  "apiVersion": "lakehouse.local/workflow/v1",
+  "name": "tpch_medallion",
+  "description": "TPC-H medallion load in two lanes (one Spark job per lane at a time, because a run's tasks share one Spark container): bronze appends a DuckDB-generated batch per entity (tpch_<entity>_db_brz); silver merges each entity's new bronze snapshots into tpch_<entity> after its bronze task.",
+  "schedule": null,
+  "tags": ["tpch", "bronze", "silver"],
+  "tasks": [
+    {"name": "tpch_region_db_brz_load", "entrypoint": "bronze/bronze_ingestion.py", "args": ["--entity", "region"], "retries": 1, "retry_delay_seconds": 60},
+    {"name": "tpch_nation_db_brz_load", "entrypoint": "bronze/bronze_ingestion.py", "runs_after": ["tpch_region_db_brz_load"], "args": ["--entity", "nation"], "retries": 1, "retry_delay_seconds": 60},
+    {"name": "tpch_supplier_db_brz_load", "entrypoint": "bronze/bronze_ingestion.py", "runs_after": ["tpch_nation_db_brz_load"], "args": ["--entity", "supplier"], "retries": 1, "retry_delay_seconds": 60},
+    {"name": "tpch_customer_db_brz_load", "entrypoint": "bronze/bronze_ingestion.py", "runs_after": ["tpch_supplier_db_brz_load"], "args": ["--entity", "customer"], "retries": 1, "retry_delay_seconds": 60},
+    {"name": "tpch_part_db_brz_load", "entrypoint": "bronze/bronze_ingestion.py", "runs_after": ["tpch_customer_db_brz_load"], "args": ["--entity", "part"], "retries": 1, "retry_delay_seconds": 60},
+    {"name": "tpch_partsupp_db_brz_load", "entrypoint": "bronze/bronze_ingestion.py", "runs_after": ["tpch_part_db_brz_load"], "args": ["--entity", "partsupp"], "retries": 1, "retry_delay_seconds": 60},
+    {"name": "tpch_orders_db_brz_load", "entrypoint": "bronze/bronze_ingestion.py", "runs_after": ["tpch_partsupp_db_brz_load"], "args": ["--entity", "orders"], "retries": 1, "retry_delay_seconds": 60},
+    {"name": "tpch_lineitem_db_brz_load", "entrypoint": "bronze/bronze_ingestion.py", "runs_after": ["tpch_orders_db_brz_load"], "args": ["--entity", "lineitem"], "retries": 1, "retry_delay_seconds": 60},
+    {"name": "tpch_region_load", "entrypoint": "silver/silver_processing.py", "runs_after": ["tpch_region_db_brz_load"], "args": ["--entity", "region"], "retries": 1, "retry_delay_seconds": 60},
+    {"name": "tpch_nation_load", "entrypoint": "silver/silver_processing.py", "runs_after": ["tpch_nation_db_brz_load", "tpch_region_load"], "args": ["--entity", "nation"], "retries": 1, "retry_delay_seconds": 60},
+    {"name": "tpch_supplier_load", "entrypoint": "silver/silver_processing.py", "runs_after": ["tpch_supplier_db_brz_load", "tpch_nation_load"], "args": ["--entity", "supplier"], "retries": 1, "retry_delay_seconds": 60},
+    {"name": "tpch_customer_load", "entrypoint": "silver/silver_processing.py", "runs_after": ["tpch_customer_db_brz_load", "tpch_supplier_load"], "args": ["--entity", "customer"], "retries": 1, "retry_delay_seconds": 60},
+    {"name": "tpch_part_load", "entrypoint": "silver/silver_processing.py", "runs_after": ["tpch_part_db_brz_load", "tpch_customer_load"], "args": ["--entity", "part"], "retries": 1, "retry_delay_seconds": 60},
+    {"name": "tpch_partsupp_load", "entrypoint": "silver/silver_processing.py", "runs_after": ["tpch_partsupp_db_brz_load", "tpch_part_load"], "args": ["--entity", "partsupp"], "retries": 1, "retry_delay_seconds": 60},
+    {"name": "tpch_orders_load", "entrypoint": "silver/silver_processing.py", "runs_after": ["tpch_orders_db_brz_load", "tpch_partsupp_load"], "args": ["--entity", "orders"], "retries": 1, "retry_delay_seconds": 60},
+    {"name": "tpch_lineitem_load", "entrypoint": "silver/silver_processing.py", "runs_after": ["tpch_lineitem_db_brz_load", "tpch_orders_load"], "args": ["--entity", "lineitem"], "retries": 1, "retry_delay_seconds": 60}
+  ]
+}

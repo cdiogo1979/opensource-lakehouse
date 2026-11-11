@@ -1,21 +1,18 @@
-# Jenkins and Airflow Bundle Deployment Functional Design
+# Functional Design — CI and Deployment (Jenkins and Airflow bundles)
 
-## Airflow Git Bundles
+How changes are checked and reach Airflow. Architecture: [`../application-design.md`](../application-design.md). Replaces the retired design (three `lakehouse-*` bundles, the bundle client).
 
-One Airflow 3 deployment is designed to use three Git DAG Bundles: `lakehouse-dev` tracks a selected feature branch, `lakehouse-uat` tracks `uat`, and `lakehouse-prod` tracks `main`. Each bundle checks out the repository root and uses the same `dags/`, `configs/`, and `notebooks/` paths. DAG runs retain bundle version identity so the DAG and Spark dependencies come from the same Git commit.
+## Airflow bundles (platform-owned)
+- Each data product with a `repo` gets two Git bundles: `<product>-main` tracks the prod branch (`main`) and `<product>-uat` tracks `uat` (refresh every 300 s, sparse `dags`, `workflows`, `notebooks`, `configs`, root files included). DAG IDs are `<bundle>-<name>`; `dev` has no bundle (Jupyter only).
+- A change reaches UAT by merging or pushing to `uat`, and production by merging into `main`. A DAG appears within about five minutes after the push.
 
-The stable bundle name selects environment config and DAG prefix: `lakehouse-main`/`lakehouse-prod` → `prod.yml` and `main-`; `lakehouse-uat` → `uat.yml` and `uat-`; other bundle names → `dev.yml` and `dev-`. The current local Airflow instance was observed using `lakehouse-main`, while the example three-bundle configuration uses `lakehouse-prod` for the `main` ref. This platform difference must be checked when applying deployment configuration.
+## Jenkins (platform-owned jobs, this repository's `Jenkinsfile`)
+- `<product>_ci` builds the prod and UAT branches; `<product>_cd` builds branches with an open pull request.
+- Stages: install `requirements-dev.txt` and the repository's `requirements.txt` constrained by the platform lock; `compileall` of `dags` and `notebooks`; `lakehouse-validate-workflows .` (workflow JSON v1, the `dags/` stub, the `requirements.txt` rules); `scripts/code_quality.sh lint`, `flake8`, `bandit` in parallel; `pytest -q`.
+- Jenkins is a CI gate only: it publishes nothing and never changes branches or bundles.
 
-## Development branch client
+## Local checks
+`.venv/bin/python -m compileall -q dags notebooks`, `PATH=".venv/bin:$PATH" scripts/code_quality.sh all`, `.venv/bin/python -m pytest -q`; the validator with a platform checkout: `PYTHONPATH=<platform>/infra/airflow python3 -m lakehouse_dags.validate .`. A `.venv` created before the repository rename keeps scripts pointing at the old path: recreate it.
 
-`airflow_bundle_client.py` reads a deployment-owned YAML settings file and an Airflow bundle JSON config. It validates Git ref syntax, rejects protected refs, enforces configured feature prefixes, changes only `lakehouse-dev.tracking_ref`, writes atomically, and invokes a trusted argument-vector apply/reload command. If apply fails, it restores the old config and reapplies it. A successful apply does not prove Airflow has fetched or parsed the branch.
-
-Git credentials remain in Airflow connections/secrets backends. The operator client is not a public DAG and is not automatically run by Jenkins. Selected branch code runs with Airflow/Spark privileges, so branch selection is limited to trusted operators.
-
-## Jenkins responsibility
-
-The Jenkinsfile compiles the Python client, DAGs, and workloads, then runs pytest. Jenkins is a CI gate only; it does not copy/upload files, mutate bundle refs, or manage Airflow Git credentials. Airflow polls configured refs, parses bundle commits, and records the version used by each DAG run.
-
-## Deployment prerequisites and unverified behavior
-
-The Airflow deployment owner must supply the Git URL/connection, provider-compatible Airflow 3 version, bundle config and refresh interval, supported apply/reload command, Docker daemon mapping, Spark image/master/network, catalog target, S3 authorization, and operator permissions. Live validation of the `.airflowignore` fix and selected bundle-version path is pending. See the archived Deploy handoff for the exact accepted limitations and ordered validation steps.
+## Verification
+2026-11-11: `default_cd` on the `tpch-medallion` pull request SUCCESS; UAT `default-uat-tpch_medallion` 21/21.
