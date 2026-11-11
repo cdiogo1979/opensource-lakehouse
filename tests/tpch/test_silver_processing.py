@@ -8,7 +8,7 @@ import pytest
 from hypothesis import given, seed, settings, strategies as st
 
 import silver_processing as silver
-from notebooks.common.cli import parse_task_args
+from notebooks.common.cli import option_name, parse_task_args
 
 HYPOTHESIS_SEED = int(os.environ.get("HYPOTHESIS_SEED", "0"))
 CONFIG = {
@@ -20,9 +20,10 @@ CONFIG = {
 
 
 def test_task_arguments_need_an_entity_and_default_to_no_lookback():
-    assert silver.check_arguments(parse_task_args(silver.TASK_ARGUMENTS, ["--entity", "lineitem"])) == ("lineitem", 0)
-    assert silver.check_arguments(parse_task_args(silver.TASK_ARGUMENTS, ["--entity", "region", "--silver-lookback-days", "7"])) == ("region", 7)
-    assert silver.WIDGET_LIST == ["entity", "silver_lookback_days"]
+    assert silver.check_arguments(parse_task_args(silver.TASK_ARGS_DEFINITION, ["--entity", "lineitem"])) == ("lineitem", 0)
+    assert silver.check_arguments(parse_task_args(silver.TASK_ARGS_DEFINITION, ["--entity", "region", "--silver-lookback-days", "7"])) == ("region", 7)
+    example = [f"{option_name(name)}={value}" for name, value in silver.TASK_ARGS_VALUES.items()]
+    assert silver.check_arguments(parse_task_args(silver.TASK_ARGS_DEFINITION, example))  # the Jupyter example is valid
     for text in ("-1", "1.5", " 7", "07", "3651", "", "seven"):
         with pytest.raises(ValueError, match="silver_lookback_days"):
             silver.parse_lookback_days(text)

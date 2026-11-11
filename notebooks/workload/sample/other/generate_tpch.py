@@ -10,8 +10,8 @@
 # In Airflow, `workflows/sample/generate_tpch.json` runs it once per entity with
 # `--entity <name>` after `--`; `--scale-factor` is optional (default 0.01).
 # In Jupyter, run the Initialization cells (and restart the kernel after the
-# first install); then run the widget cell below, fill in `entity` (and,
-# optionally, `scale_factor`), and run the remaining cells. DuckDB downloads its
+# first install); then set `entity` (and, optionally, `scale_factor`) in
+# `TASK_ARGS_VALUES` under Task arguments, and run the remaining cells. DuckDB downloads its
 # `tpch` extension the first time it is used, so the first run needs network access.
 
 # %% [markdown]
@@ -50,17 +50,19 @@ logger = logging.getLogger(__name__)
 # %% [markdown]
 # ## Task arguments
 #
-# The same declaration serves both places: Airflow passes the workflow's `args`
-# (`--entity orders`); in Jupyter the input widgets below hold the values (or a
-# `TASK_ARGS` list, when there are no widgets). The common parser only reads them;
-# this notebook checks them (`check_arguments`).
+# Two parts: the definition (which arguments the job accepts), used everywhere,
+# and the values for a Jupyter run. In Airflow the values come from the
+# workflow's `args` (`--entity orders`) instead. The common parser only reads
+# them; this notebook checks them (`check_arguments`).
 
 # %%
-TASK_ARGUMENTS = {"entity": {"required": True}, "scale_factor": {"default": "0.01"}}
-WIDGET_LIST = ["entity", "scale_factor"]
+# The arguments this job accepts, in Airflow and in Jupyter: each name, and
+# whether it is required or its default.
+TASK_ARGS_DEFINITION = {"entity": {"required": True}, "scale_factor": {"default": "0.01"}}
 
-# %%
-# %run ../../../common/jupyter_input_widget_helper.py
+# Jupyter only: this run's values, as strings (a name left out takes its
+# default). Airflow ignores it and uses the workflow's `args`.
+TASK_ARGS_VALUES = {"entity": "region", "scale_factor": "0.01"}
 
 # %% [markdown]
 # ## TPC-H rules
@@ -138,7 +140,7 @@ def check_arguments(arguments: dict) -> tuple:
     """The entity and the scale factor from the parsed task arguments, checked against the TPC-H rules.
 
     Args:
-        arguments: The mapping from ``parse_task_args(TASK_ARGUMENTS)``.
+        arguments: The mapping from ``parse_task_args(TASK_ARGS_DEFINITION)``.
 
     Returns:
         ``(entity, scale_factor)``.
@@ -181,7 +183,7 @@ def generate_tpch(entity: str, scale_factor: Decimal) -> int:
 # %% [markdown]
 # ## Execution
 #
-# Reads the task arguments (the workflow's `args` in Airflow, the widgets in
+# Reads the task arguments (the workflow's `args` in Airflow, `TASK_ARGS_VALUES` in
 # Jupyter), checks them, then generates and counts.
 
 # %%
@@ -190,7 +192,7 @@ if __name__ == "__main__":
     from notebooks.common.cli import parse_task_args
 
     try:
-        entity, scale_factor = check_arguments(parse_task_args(TASK_ARGUMENTS, prog="generate_tpch.py"))
+        entity, scale_factor = check_arguments(parse_task_args(TASK_ARGS_DEFINITION, prog="generate_tpch.py"))
     except ValueError as error:
         if "ipykernel" in sys.modules:
             raise

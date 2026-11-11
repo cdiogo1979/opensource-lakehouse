@@ -1,4 +1,4 @@
-"""Shared argument parsing for Spark jobs, in Airflow (command line) and Jupyter (widgets or TASK_ARGS)."""
+"""Shared argument parsing for Spark jobs, in Airflow (command line) and Jupyter (the notebook's TASK_ARGS_VALUES)."""
 
 import argparse
 import os
@@ -13,10 +13,9 @@ from .config_loader import SUPPORTED_ENVIRONMENTS
 # Airflow passes a task's workflow "args" after this separator:
 #   spark-submit job.py --environment uat --config-dir ... -- --date 2026-11-10
 TASK_ARGS_SEPARATOR = "--"
-# In Jupyter, a notebook's arguments come from the widgets that jupyter_input_widget_helper.py
-# keeps in this notebook variable, else from the notebook's TASK_ARGS list.
-WIDGETS_VARIABLE = "LAKEHOUSE_WIDGETS"
-TASK_ARGS_VARIABLE = "TASK_ARGS"
+# In Jupyter, a notebook's arguments come from this notebook variable, a dict of argument
+# names to values (strings, as Airflow passes them); outside a kernel it is never read.
+TASK_ARGS_VARIABLE = "TASK_ARGS_VALUES"
 ARGUMENT_NAME = re.compile(r"[a-z][a-z0-9_]{0,49}")
 SPEC_KEYS = frozenset({"required", "default"})
 
@@ -75,23 +74,18 @@ def _notebook_namespace() -> Optional[dict]:
 
 
 def task_args(argv: Any = None) -> list:
-    """The workflow task's arguments: after ``--`` on the command line, or the notebook's ``TASK_ARGS`` in Jupyter.
+    """The workflow task's arguments: what follows ``--`` on the command line.
 
     Args:
-        argv: Optional argument list; defaults to ``sys.argv[1:]`` (or ``TASK_ARGS`` in Jupyter).
+        argv: Optional argument list; defaults to ``sys.argv[1:]``.
 
     Returns:
-        The arguments, unchanged; ``[]`` when there are none.
-
-    Raises:
-        TaskArgumentError: ``TASK_ARGS`` is not a list of strings.
+        The arguments, unchanged; ``[]`` when there are none, and always in Jupyter
+        without ``argv`` (never the kernel's own command line; a notebook's
+        arguments are its ``TASK_ARGS_VALUES``, read by ``parse_task_args``).
     """
     if argv is None and "ipykernel" in sys.modules:
-        # Never the kernel's own command line.
-        value = (_notebook_namespace() or {}).get(TASK_ARGS_VARIABLE, [])
-        if not isinstance(value, list) or not all(isinstance(item, str) for item in value):
-            raise TaskArgumentError(f"{TASK_ARGS_VARIABLE} must be a list of strings.")
-        return list(value)
+        return []
     return _split(argv)[1]
 
 
@@ -158,14 +152,16 @@ def _parse_tokens(tokens: list, declaration: Mapping) -> tuple:
     return values, problems
 
 
-def _widget_values(widgets: Mapping, declaration: Mapping) -> tuple:
+def _notebook_values(value: Any, declaration: Mapping) -> tuple:
+    if not isinstance(value, Mapping):
+        return {}, [f'{TASK_ARGS_VARIABLE} must be a dict of argument names to values, for example {{"entity": "orders"}}']
     values, problems = {}, []
-    for name, widget in widgets.items():
+    for name, text in value.items():
         if name not in declaration:
-            problems.append(f"widget {name!r} is not a declared argument")
-            continue
-        text = getattr(widget, "value", "")
-        if isinstance(text, str) and text != "":
+            problems.append(f"{TASK_ARGS_VARIABLE}: {name!r} is not a declared argument")
+        elif not isinstance(text, str):
+            problems.append(f'{TASK_ARGS_VARIABLE}: {name!r} must be a string, as Airflow passes it (for example "{text}")')
+        else:
             values[name] = text
     return values, problems
 
@@ -179,9 +175,9 @@ def parse_task_args(declaration: Mapping, argv: Any = None, prog: Optional[str] 
     """The job's declared task arguments, as strings; values are never converted or checked.
 
     Each name in ``declaration`` maps to ``{"required": True}``, ``{"default": "<text>"}``
-    or ``{}``; ``scale_factor`` is given as ``--scale-factor value`` or ``--scale-factor=value``.
-    The values come from the command line after ``--`` (Airflow), or in Jupyter from
-    the notebook's input widgets when there are any, else from its ``TASK_ARGS``.
+    or ``{}``; on the command line (Airflow, after ``--``) ``scale_factor`` is given as
+    ``--scale-factor value`` or ``--scale-factor=value``. In Jupyter the values come only
+    from the notebook's ``TASK_ARGS_VALUES`` dict, for example ``{"scale_factor": "0.1"}``.
 
     Args:
         declaration: The job's argument names and specs.
@@ -199,16 +195,10 @@ def parse_task_args(declaration: Mapping, argv: Any = None, prog: Optional[str] 
     if problems:
         raise TaskArgumentError("Invalid task argument declaration: " + "; ".join(problems))
     namespace = _notebook_namespace() if argv is None else None
-    widgets = (namespace or {}).get(WIDGETS_VARIABLE)
-    if isinstance(widgets, Mapping) and widgets:
-        values, problems = _widget_values(widgets, declaration)
+    if namespace is not None:
+        values, problems = _notebook_values(namespace.get(TASK_ARGS_VARIABLE, {}), declaration)
     else:
-        try:
-            tokens = task_args() if argv is None else list(argv)
-        except TaskArgumentError as error:
-            tokens, problems = [], [str(error)]
-        values, token_problems = _parse_tokens(tokens, declaration)
-        problems += token_problems
+        values, problems = _parse_tokens(task_args() if argv is None else list(argv), declaration)
     problems += [f"option {option_name(name)} is required" for name, spec in declaration.items() if spec.get("required") and name not in values]
     if problems:
         message = "\n".join([*problems, _usage(declaration, prog or _program_name())])

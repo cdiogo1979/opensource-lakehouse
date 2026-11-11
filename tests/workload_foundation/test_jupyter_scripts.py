@@ -1,11 +1,10 @@
-"""The Jupyter %run scripts in notebooks/common: inert on import, and their rules (BR-R, BR-W)."""
+"""The Jupyter %run script in notebooks/common (inert on import) and the notebook standard (BR-R)."""
 
-import types
 from pathlib import Path
 
 import pytest
 
-from notebooks.common import cli, jupyter_environment_resolver as resolver, jupyter_input_widget_helper as widgets
+from notebooks.common import jupyter_environment_resolver as resolver
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
 
@@ -22,25 +21,18 @@ def test_the_spark_application_takes_the_notebook_name():
     assert resolver.notebook_name({}) == "notebook"
 
 
-def test_importing_the_scripts_starts_nothing():
-    assert not hasattr(resolver, "spark") and not hasattr(widgets, "LAKEHOUSE_WIDGETS")
+def test_importing_the_resolver_starts_nothing():
+    assert not hasattr(resolver, "spark")
 
 
-@pytest.mark.parametrize("value", [None, [], "entity", ["Entity"], ["entity", "entity"], ["scale-factor"], [3]])
-def test_widget_list_must_be_distinct_argument_names(value):
-    with pytest.raises(ValueError):
-        widgets.check_widget_list(value)
-
-
-def test_widgets_keep_their_text_and_follow_the_list():
-    existing = {"entity": types.SimpleNamespace(value="orders"), "old": types.SimpleNamespace(value="x")}
-    built = widgets.build_widgets(["scale_factor", "entity"], existing, lambda name: types.SimpleNamespace(value=""))
-    assert list(built) == ["scale_factor", "entity"] and built["entity"] is existing["entity"] and "old" not in built
-
-
-def test_the_helper_and_the_parser_share_the_variable_and_name_rule():
-    assert widgets.WIDGETS_VARIABLE == cli.WIDGETS_VARIABLE
-    assert widgets.WIDGET_NAME.pattern == cli.ARGUMENT_NAME.pattern
+def test_notebooks_set_their_jupyter_arguments_in_task_args_not_widgets():
+    """Widgets were removed: a notebook's Jupyter arguments are its TASK_ARGS_VALUES dict."""
+    assert not (REPOSITORY_ROOT / "notebooks/common/jupyter_input_widget_helper.py").exists()
+    for path in notebooks():
+        text = path.read_text()
+        assert "WIDGET_LIST" not in text and "jupyter_input_widget_helper" not in text, path.name
+        if "TASK_ARGS_DEFINITION = " in text:
+            assert "\nTASK_ARGS_VALUES = {" in text, f"{path.name}: declares TASK_ARGS_DEFINITION but sets no TASK_ARGS_VALUES dict"
 
 
 def test_entry_points_run_the_scripts_from_common():

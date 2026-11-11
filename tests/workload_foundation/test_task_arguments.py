@@ -1,4 +1,4 @@
-"""Declared task arguments: the command line in Airflow, widgets or TASK_ARGS in Jupyter (P3 to P6)."""
+"""Declared task arguments: the command line in Airflow, the notebook's TASK_ARGS_VALUES dict in Jupyter (P3 to P6)."""
 
 import os
 import sys
@@ -21,10 +21,6 @@ def notebook(monkeypatch):
     monkeypatch.setattr(cli, "_notebook_namespace", lambda: namespace)
     monkeypatch.setattr(sys, "argv", ["kernel", "--", "--entity", "from-the-kernel-argv"])
     return namespace
-
-
-def widget(text):
-    return types.SimpleNamespace(value=text)
 
 
 def test_command_line_values_are_strings_and_defaults_fill_the_rest():
@@ -67,29 +63,36 @@ def test_invalid_declarations_are_refused_before_parsing(declaration):
         cli.parse_task_args(declaration, [])
 
 
-def test_jupyter_reads_widgets_first_then_task_args_and_never_the_kernel_argv(notebook):
-    notebook["TASK_ARGS"] = ["--entity", "from-task-args"]
-    assert cli.parse_task_args(DECLARATION)["entity"] == "from-task-args"
-    notebook["LAKEHOUSE_WIDGETS"] = {"entity": widget("orders"), "scale_factor": widget("")}
-    assert dict(cli.parse_task_args(DECLARATION)) == {"entity": "orders", "scale_factor": "0.01", "note": None}
-    assert cli.task_args() == ["--entity", "from-task-args"]
-    del notebook["TASK_ARGS"]
+def test_jupyter_reads_only_the_task_args_dict_and_never_the_kernel_argv(notebook):
+    notebook["TASK_ARGS_VALUES"] = {"entity": "orders", "note": ""}
+    assert dict(cli.parse_task_args(DECLARATION)) == {"entity": "orders", "scale_factor": "0.01", "note": ""}
     assert cli.task_args() == []
+    del notebook["TASK_ARGS_VALUES"]
+    with pytest.raises(cli.TaskArgumentError, match="option --entity is required"):
+        cli.parse_task_args(DECLARATION)
+
+
+def test_airflow_never_reads_task_args_and_falls_back_to_the_defaults(monkeypatch):
+    monkeypatch.delitem(sys.modules, "ipykernel", raising=False)
+    monkeypatch.setattr(sys, "argv", ["job.py", "--environment", "dev", "--", "--entity", "from-the-workflow"])
+    assert dict(cli.parse_task_args(DECLARATION)) == {"entity": "from-the-workflow", "scale_factor": "0.01", "note": None}
+    monkeypatch.setattr(sys, "argv", ["job.py", "--environment", "dev"])
+    assert cli.parse_task_args({"scale_factor": {"default": "0.01"}})["scale_factor"] == "0.01"
 
 
 def test_jupyter_problems_raise_instead_of_ending_the_kernel(notebook, monkeypatch):
     monkeypatch.setenv("JPY_SESSION_NAME", "/home/jovyan/work/repo/notebooks/workload/generate_tpch.py")
-    notebook["LAKEHOUSE_WIDGETS"] = {"entity": widget(""), "colour": widget("red")}
+    notebook["TASK_ARGS_VALUES"] = {"entity": 3, "colour": "red"}
     with pytest.raises(cli.TaskArgumentError) as error:
         cli.parse_task_args(DECLARATION)
     assert str(error.value).splitlines() == [
-        "widget 'colour' is not a declared argument",
+        "TASK_ARGS_VALUES: 'entity' must be a string, as Airflow passes it (for example \"3\")",
+        "TASK_ARGS_VALUES: 'colour' is not a declared argument",
         "option --entity is required",
         "usage: generate_tpch.py --entity ENTITY [--scale-factor SCALE_FACTOR] [--note NOTE]",
     ]
-    notebook.clear()
-    notebook["TASK_ARGS"] = "--entity orders"
-    with pytest.raises(cli.TaskArgumentError, match="TASK_ARGS must be a list of strings"):
+    notebook["TASK_ARGS_VALUES"] = ["--entity", "orders"]
+    with pytest.raises(cli.TaskArgumentError, match="TASK_ARGS_VALUES must be a dict of argument names to values"):
         cli.parse_task_args(DECLARATION)
 
 
@@ -132,22 +135,19 @@ def test_p3_rendered_arguments_parse_back_to_the_same_values(case, data):
 @seed(HYPOTHESIS_SEED)
 @settings(max_examples=100, print_blob=True)
 @given(declared_values())
-def test_p4_widgets_task_args_and_the_command_line_agree(case):
+def test_p4_the_task_args_dict_and_the_command_line_agree(case):
     declaration, given_values = case
     from_line = cli.parse_task_args(declaration, render(given_values, list(declaration), True))
-    namespace = {"LAKEHOUSE_WIDGETS": {n: widget(given_values.get(n, "")) for n in declaration}}
+    namespace = {"TASK_ARGS_VALUES": dict(given_values)}
     original = cli._notebook_namespace
     sys.modules.setdefault("ipykernel", types.ModuleType("ipykernel"))
     try:
         cli._notebook_namespace = lambda: namespace
-        from_widgets = cli.parse_task_args(declaration)
-        namespace.clear()
-        namespace["TASK_ARGS"] = render(given_values, list(declaration), False)
         from_task_args = cli.parse_task_args(declaration)
     finally:
         cli._notebook_namespace = original
         sys.modules.pop("ipykernel", None)
-    assert dict(from_line) == dict(from_widgets) == dict(from_task_args)
+    assert dict(from_line) == dict(from_task_args)
 
 
 @seed(HYPOTHESIS_SEED)

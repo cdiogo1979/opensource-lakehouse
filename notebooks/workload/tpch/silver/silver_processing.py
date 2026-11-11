@@ -22,8 +22,8 @@
 # `--entity <name>` (task `tpch_<entity>_load`, after its bronze task). For a
 # lookback in uat or prod, temporarily add `--silver-lookback-days <N>` to the
 # silver tasks' `args`, push, run, and revert. In Jupyter, run the Initialization
-# cells, then the widget cell below, fill in `entity` (and, optionally,
-# `silver_lookback_days`), and run the remaining cells.
+# cells, then set `entity` (and, optionally, `silver_lookback_days`) in
+# `TASK_ARGS_VALUES` under Task arguments, and run the remaining cells.
 
 # %% [markdown]
 # ## Initialization
@@ -63,17 +63,19 @@ logger = logging.getLogger(__name__)
 # %% [markdown]
 # ## Task arguments
 #
-# The same declaration serves both places: Airflow passes the workflow's `args`
-# (`--entity orders`); in Jupyter the input widgets below hold the values (or a
-# `TASK_ARGS` list, when there are no widgets). The common parser only reads them;
-# this notebook checks them (`check_arguments`).
+# Two parts: the definition (which arguments the job accepts), used everywhere,
+# and the values for a Jupyter run. In Airflow the values come from the
+# workflow's `args` (`--entity orders`) instead. The common parser only reads
+# them; this notebook checks them (`check_arguments`).
 
 # %%
-TASK_ARGUMENTS = {"entity": {"required": True}, "silver_lookback_days": {"default": "0"}}
-WIDGET_LIST = ["entity", "silver_lookback_days"]
+# The arguments this job accepts, in Airflow and in Jupyter: each name, and
+# whether it is required or its default.
+TASK_ARGS_DEFINITION = {"entity": {"required": True}, "silver_lookback_days": {"default": "0"}}
 
-# %%
-# %run ../../../common/jupyter_input_widget_helper.py
+# Jupyter only: this run's values, as strings (a name left out takes its
+# default). Airflow ignores it and uses the workflow's `args`.
+TASK_ARGS_VALUES = {"entity": "region", "silver_lookback_days": "0"}
 
 # %% [markdown]
 # ## Merge keys and argument rules
@@ -123,7 +125,7 @@ def check_arguments(arguments: dict) -> tuple:
     """The entity and the lookback from the parsed task arguments.
 
     Args:
-        arguments: The mapping from ``parse_task_args(TASK_ARGUMENTS)``.
+        arguments: The mapping from ``parse_task_args(TASK_ARGS_DEFINITION)``.
 
     Returns:
         ``(entity, lookback_days)``.
@@ -316,7 +318,7 @@ def process(spark, config, entity: str, lookback_days: int) -> dict:
 # %% [markdown]
 # ## Execution
 #
-# Reads the task arguments (the workflow's `args` in Airflow, the widgets in
+# Reads the task arguments (the workflow's `args` in Airflow, `TASK_ARGS_VALUES` in
 # Jupyter) and checks them. In Airflow, `start_spark_job` loads the environment's
 # config and starts Spark; in Jupyter, the Initialization already defined `spark`
 # and `config`. Spark is stopped at the end, also after a failure.
@@ -327,7 +329,7 @@ if __name__ == "__main__":
     from notebooks.common.cli import parse_task_args
 
     try:
-        entity, lookback_days = check_arguments(parse_task_args(TASK_ARGUMENTS, prog="silver_processing.py"))
+        entity, lookback_days = check_arguments(parse_task_args(TASK_ARGS_DEFINITION, prog="silver_processing.py"))
     except ValueError as error:
         if "ipykernel" in sys.modules:
             raise

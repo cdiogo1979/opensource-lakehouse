@@ -22,7 +22,7 @@ This repository is a lakehouse **data product repository** for the `opensource-l
 - All tables of an environment live in its one namespace (`database_name`): products can't create namespaces.
 
 ## Notebook standard
-Title cell (purpose, inputs, effects); `## Initialization` (`# !lakehouse-install-requirements ~/work/opensource-lakehouse-sample-dp`, `# %run ../../../common/jupyter_environment_resolver.py`, commented in Airflow); `## Imports`; for task arguments a `## Task arguments` section (`TASK_ARGUMENTS`, `WIDGET_LIST`, `# %run ../../../common/jupyter_input_widget_helper.py`); the job's own sections; `## Execution` with only the `if __name__ == "__main__":` block, which stops Spark in `finally:`. A test checks the structure.
+Title cell (purpose, inputs, effects); `## Initialization` (`# !lakehouse-install-requirements ~/work/opensource-lakehouse-sample-dp`, `# %run ../../../common/jupyter_environment_resolver.py`, commented in Airflow); `## Imports`; for task arguments a `## Task arguments` section (`TASK_ARGS_DEFINITION`, the arguments the job accepts, used in Airflow and Jupyter; then `TASK_ARGS_VALUES`, the Jupyter-only values with a working example; each with a comment; no input widgets); the job's own sections; `## Execution` with only the `if __name__ == "__main__":` block, which stops Spark in `finally:`. A test checks the structure.
 
 ## Environments
 `prod` (bundle `-main`), `uat` (`-uat`), `dev` (Jupyter only). Configs need `storage_path`, `database_name`, usually `catalog_name`, and for streaming jobs `checkpoint_path: s3ckpt://<bucket>/checkpoints`. No secrets anywhere in the repository.

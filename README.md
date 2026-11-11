@@ -74,7 +74,6 @@ notebooks/
     cli.py                   --environment, --config-dir, task arguments (parse_task_args)
     job_runtime.py           start_spark_job(): config, then the platform's Spark session
     jupyter_environment_resolver.py   Jupyter start-up: the clone, the environment, spark and config (%run)
-    jupyter_input_widget_helper.py    Jupyter input widgets for a job's task arguments (%run)
   workload/                Spark jobs (Jupytext py:percent files, also notebooks), per subproject
     sample/                  subproject "sample" (the entry points of workflows/sample/)
       other/                   notebooks that fit no medallion layer
@@ -185,10 +184,10 @@ Use the shared helpers rather than parsing `sys.argv` yourself:
 from notebooks.common.cli import parse_task_args
 from notebooks.common.job_runtime import start_spark_job
 
-TASK_ARGUMENTS = {"date": {"required": True}, "mode": {"default": "append"}}
+TASK_ARGS_DEFINITION = {"date": {"required": True}, "mode": {"default": "append"}}
 
 spark, config = start_spark_job("load_sales")  # reads --environment and --config-dir; dev in Jupyter
-arguments = parse_task_args(TASK_ARGUMENTS)     # {"date": "2026-11-10", "mode": "append"}
+arguments = parse_task_args(TASK_ARGS_DEFINITION)     # {"date": "2026-11-10", "mode": "append"}
 ```
 
 - **Who does what**: the platform starts the Spark session (the Polaris catalogs, your run's or your own token, redaction) with its `lakehouse_spark` module, which both platform images provide. This repository keeps its configuration: every key of `configs/<env>.yml` reaches the job.
@@ -198,11 +197,11 @@ arguments = parse_task_args(TASK_ARGUMENTS)     # {"date": "2026-11-10", "mode":
   - asks the platform for the session with the config's `catalog_name`, and returns `(spark, config)`. The Spark application is `<env>-<app_name>`.
 - **Task arguments**: declare them once and read them with `parse_task_args(declaration)`:
   - **declaration**: each name maps to `{"required": True}`, `{"default": "<text>"}` or `{}`; `date` is the option `--date`, `scale_factor` is `--scale-factor`;
-  - **sources**: the workflow task's `args` (after `--`) in Airflow; in Jupyter the [input widgets](#working-in-jupyter), else a `TASK_ARGS` list in the notebook;
+  - **sources**: the workflow task's `args` (after `--`) in Airflow; in Jupyter only the notebook's [`TASK_ARGS_VALUES` dict](#working-in-jupyter). Airflow never reads `TASK_ARGS_VALUES`: without `args`, a run gets the declared defaults;
   - **values are strings**, never converted or checked: check them in the job (as `generate_tpch.py` does);
   - **structural errors** (an unknown option, a missing required one, an option given twice or without a value) are reported together with the usage: the task exits with status 2 in Airflow, and the cell raises `TaskArgumentError` in Jupyter.
 
-  `cli.task_args()` still returns the raw list (after `--`, or `TASK_ARGS` in Jupyter). Arguments are passed as a list and never go through a shell.
+  `cli.task_args()` still returns the raw list after `--` (empty in Jupyter). Arguments are passed as a list and never go through a shell.
 - **Environment variables** set in the Airflow container: `LAKEHOUSE_ENVIRONMENT` (`prod` or `uat`), `LAKEHOUSE_PRODUCT` (for example `default`), and `PYTHONPATH=/opt/lakehouse-bundle`, so `notebooks.common` imports work.
 - **The same structure in every notebook**, as `## ` markdown sections:
   1. the title (`# `) and what the job does;
@@ -279,14 +278,17 @@ The path `~/work/opensource-lakehouse-sample-dp` assumes the clone is in `~/work
 
 **Another environment**: run `%env LAKEHOUSE_ENVIRONMENT=uat` (or `prod`) before the Initialization section. A kernel that already has a session needs a restart to switch.
 
-**Task arguments as widgets**: list the job's arguments, then run the widget helper; fill in the fields and run the job's cells:
+**Task arguments in Jupyter**: set them in the notebook's `TASK_ARGS_VALUES` dict, under the Task arguments section, next to the declaration, then run the job's cells:
 
 ```python
-WIDGET_LIST = ["entity", "scale_factor"]
-# %run ../../../common/jupyter_input_widget_helper.py
+# The arguments this job accepts, in Airflow and in Jupyter
+TASK_ARGS_DEFINITION = {"entity": {"required": True}, "scale_factor": {"default": "0.01"}}
+
+# Jupyter only: this run's values (Airflow uses the workflow's args)
+TASK_ARGS_VALUES = {"entity": "orders", "scale_factor": "0.1"}
 ```
 
-`parse_task_args` reads the fields (an empty field is "not given"); running the helper again keeps what you typed. Without widgets, it reads a `TASK_ARGS` list instead, for example `TASK_ARGS = ["--entity", "orders"]`.
+Values are strings, as Airflow passes them; a name left out takes its default. A name that isn't declared, a non-string value, or a missing required argument raises `TaskArgumentError` with the usage line. Only Jupyter reads `TASK_ARGS_VALUES`, so the committed example never affects an Airflow run.
 
 **The kernel**: the only kernel is **Lakehouse (Python 3.10)**, with the same packages as Airflow runs. Notebooks saved with an older kernel open with it.
 
@@ -299,7 +301,7 @@ lakehouse-install-requirements        # or: lakehouse-install-requirements path/
 
 The packages go to `~/.local/lakehouse/python3.10`, which lasts only for the current server session (only `~/work` is kept across restarts): **rerun the command after every server start**. Running the command for another repository adds its packages too. When the platform's lock changes, the command asks you to rerun it with `--reset`, which empties that folder first.
 
-**TPC-H in a notebook**: open `notebooks/workload/sample/other/generate_tpch.py`, run the Initialization section and the cells up to the widgets, type an entity (for example `orders`), and run the remaining cells.
+**TPC-H in a notebook**: open `notebooks/workload/sample/other/generate_tpch.py`, set the entity in `TASK_ARGS_VALUES` (for example `"orders"`; the committed example is `"region"`), and run all cells.
 
 `workflows/` and `dags/` play no part in Jupyter. An entry point that works in Jupyter with `dev` should behave the same in Airflow with `uat` and `prod`, apart from data and permissions.
 
@@ -334,7 +336,7 @@ TPC-H data through a bronze and a silver layer, in the environment's namespace:
 - **Tables** are created by the first run at `<storage_path>/<catalog_name>/<database_name>/<table>`. The product's writer can't drop tables; ask an owner or the platform team.
 - **Conventions**: notebooks `<layer>_<action>.py`; bronze tables `<project>_<entity>_<source>_brz`; silver tables `<project>_<entity>`; workflows `<project>_<purpose>`; tasks `<target_table>_load`; checkpoints `<checkpoint_path>/<project>/<target_table>` (see [AGENTS.md](AGENTS.md)).
 - **Reprocess silver** (`silver_lookback_days`, default 0): with N > 0, silver deletes the entity's checkpoint and merges the bronze snapshots of the last N days again (safe: rows never get older).
-  - **In Jupyter** (`dev`): set the `silver_lookback_days` widget.
+  - **In Jupyter** (`dev`): set `"silver_lookback_days": "<N>"` in the notebook's `TASK_ARGS_VALUES`.
   - **In uat or prod**: Airflow can't change a task's arguments at trigger time, so temporarily add `"--silver-lookback-days", "<N>"` to the silver tasks' `args` in `workflows/tpch/tpch_medallion.json`, merge, run the DAG once, then revert the change.
 - **Limits**: bronze is append-only; a bronze snapshot that deletes or overwrites rows stops the silver stream. Each checkpoint must have one writer at a time, so don't run the same entity's silver from Jupyter and Airflow at once.
 

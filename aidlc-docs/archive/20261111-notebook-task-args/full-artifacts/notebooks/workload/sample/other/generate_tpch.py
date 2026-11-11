@@ -1,0 +1,201 @@
+# %% [markdown]
+# # Generate TPC-H data and count one entity
+#
+# This Jupytext `py:percent` notebook generates the TPC-H dataset in memory with
+# DuckDB (the `duckdb` package from this repository's `requirements.txt`), counts
+# the rows of one TPC-H entity, and checks the count against the TPC-H rules. It
+# needs no Spark session (the Initialization starts one in Jupyter, unused here)
+# and writes nothing.
+#
+# In Airflow, `workflows/sample/generate_tpch.json` runs it once per entity with
+# `--entity <name>` after `--`; `--scale-factor` is optional (default 0.01).
+# In Jupyter, run the Initialization cells (and restart the kernel after the
+# first install); then set `entity` (and, optionally, `scale_factor`) in
+# `TASK_ARGS_VALUES` under Task arguments, and run the remaining cells. DuckDB downloads its
+# `tpch` extension the first time it is used, so the first run needs network access.
+
+# %% [markdown]
+# ## Initialization
+#
+# Jupyter only: in `spark-submit` (Airflow) these two cells are comments.
+# 1. Install this repository's extra packages (`requirements.txt`). After the
+#    first install in a server session, restart the kernel, then run all cells.
+# 2. Find this clone, load its config and start Spark: `dev` by default; for
+#    another environment, run `%env LAKEHOUSE_ENVIRONMENT=uat` (or `prod`) first.
+#    It defines `spark` and `config`.
+
+# %%
+# !lakehouse-install-requirements ~/work/opensource-lakehouse-sample-dp
+
+# %%
+# %run ../../../common/jupyter_environment_resolver.py
+
+# %% [markdown]
+# ## Imports
+#
+# Standard and third-party imports, and logging. Under `spark-submit` the
+# repository root is on `PYTHONPATH`; in Jupyter the Initialization put it there.
+
+# %%
+import logging
+import sys
+from decimal import Decimal, InvalidOperation
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s %(levelname)s %(name)s - %(message)s",
+)
+logger = logging.getLogger(__name__)
+
+# %% [markdown]
+# ## Task arguments
+#
+# Two parts: the definition (which arguments the job accepts), used everywhere,
+# and the values for a Jupyter run. In Airflow the values come from the
+# workflow's `args` (`--entity orders`) instead. The common parser only reads
+# them; this notebook checks them (`check_arguments`).
+
+# %%
+# The arguments this job accepts, in Airflow and in Jupyter: each name, and
+# whether it is required or its default.
+TASK_ARGS_DEFINITION = {"entity": {"required": True}, "scale_factor": {"default": "0.01"}}
+
+# Jupyter only: this run's values, as strings (a name left out takes its
+# default). Airflow ignores it and uses the workflow's `args`.
+TASK_ARGS_VALUES = {"entity": "region", "scale_factor": "0.01"}
+
+# %% [markdown]
+# ## TPC-H rules
+#
+# `region` and `nation` have fixed sizes. The other entities, except `lineitem`,
+# have exactly their base count times the scale factor. Each order has 1 to 7
+# lines, so `lineitem` is checked against the `orders` count. Scale factors are
+# kept small (0.001 to 1, at most three decimal places) so every count is whole.
+
+# %%
+ENTITIES = ("region", "nation", "supplier", "customer", "part", "partsupp", "orders", "lineitem")
+FIXED_COUNTS = {"region": 5, "nation": 25}
+BASE_COUNTS = {"supplier": 10_000, "customer": 150_000, "part": 200_000, "partsupp": 800_000, "orders": 1_500_000}
+LINES_PER_ORDER = (1, 7)
+SCALE_STEP = Decimal("0.001")
+MIN_SCALE_FACTOR = Decimal("0.001")
+MAX_SCALE_FACTOR = Decimal("1")
+
+
+def parse_scale_factor(text: str) -> Decimal:
+    """A TPC-H scale factor from 0.001 to 1 with at most three decimal places.
+
+    Args:
+        text: The scale factor as written, for example ``"0.01"``.
+
+    Returns:
+        The exact decimal value.
+
+    Raises:
+        ValueError: The text is not such a number.
+    """
+    try:
+        value = Decimal(text)
+    except (InvalidOperation, TypeError):
+        value = None
+    if value is None or not value.is_finite() or not MIN_SCALE_FACTOR <= value <= MAX_SCALE_FACTOR or value != value.quantize(SCALE_STEP):
+        raise ValueError(f"the scale factor must be a number from 0.001 to 1 with at most three decimal places, not {text!r}")
+    return value
+
+
+def expected_count(entity: str, scale_factor: Decimal, orders_count: int = 0) -> tuple:
+    """The inclusive (lowest, highest) row count TPC-H allows for an entity.
+
+    Args:
+        entity: One of ``ENTITIES``.
+        scale_factor: A value accepted by ``parse_scale_factor``.
+        orders_count: The generated ``orders`` count, needed for ``lineitem``.
+
+    Returns:
+        ``(lowest, highest)``; equal except for ``lineitem``.
+    """
+    if entity in FIXED_COUNTS:
+        return FIXED_COUNTS[entity], FIXED_COUNTS[entity]
+    if entity in BASE_COUNTS:
+        count = int(BASE_COUNTS[entity] * scale_factor)
+        return count, count
+    if entity == "lineitem":
+        return LINES_PER_ORDER[0] * orders_count, LINES_PER_ORDER[1] * orders_count
+    raise ValueError(f"unknown TPC-H entity {entity!r}; expected one of {', '.join(ENTITIES)}")
+
+
+def check_count(entity: str, scale_factor: Decimal, count: int, orders_count: int = 0) -> None:
+    """Raise when a generated count breaks the TPC-H rule for its entity.
+
+    Raises:
+        RuntimeError: The count is outside ``expected_count``.
+    """
+    lowest, highest = expected_count(entity, scale_factor, orders_count)
+    if not lowest <= count <= highest:
+        expected = str(lowest) if lowest == highest else f"{lowest} to {highest}"
+        raise RuntimeError(f"TPC-H {entity} at scale factor {scale_factor}: {count} rows, expected {expected}")
+
+
+def check_arguments(arguments: dict) -> tuple:
+    """The entity and the scale factor from the parsed task arguments, checked against the TPC-H rules.
+
+    Args:
+        arguments: The mapping from ``parse_task_args(TASK_ARGS_DEFINITION)``.
+
+    Returns:
+        ``(entity, scale_factor)``.
+
+    Raises:
+        ValueError: The entity is not a TPC-H entity, or the scale factor breaks ``parse_scale_factor``.
+    """
+    entity = arguments["entity"]
+    if entity not in ENTITIES:
+        raise ValueError(f"unknown TPC-H entity {entity!r}; expected one of {', '.join(ENTITIES)}")
+    return entity, parse_scale_factor(arguments["scale_factor"])
+
+
+# %% [markdown]
+# ## Generate and count
+#
+# The entity name is checked against `ENTITIES` before it reaches SQL.
+
+
+# %%
+def generate_tpch(entity: str, scale_factor: Decimal) -> int:
+    """Generate TPC-H at ``scale_factor`` in memory, count ``entity``, and check the count.
+
+    Returns:
+        The entity's row count.
+    """
+    if entity not in ENTITIES:
+        raise ValueError(f"unknown TPC-H entity {entity!r}; expected one of {', '.join(ENTITIES)}")
+    import duckdb
+
+    with duckdb.connect() as connection:
+        connection.execute(f"CALL dbgen(sf={parse_scale_factor(str(scale_factor))})")
+        count = connection.execute(f"SELECT count(*) FROM {entity}").fetchone()[0]  # nosec B608 - entity is one of ENTITIES
+        orders_count = connection.execute("SELECT count(*) FROM orders").fetchone()[0] if entity == "lineitem" else 0
+    logger.info("TPC-H %s at scale factor %s: %d rows", entity, scale_factor, count)
+    check_count(entity, scale_factor, count, orders_count)
+    return count
+
+
+# %% [markdown]
+# ## Execution
+#
+# Reads the task arguments (the workflow's `args` in Airflow, `TASK_ARGS_VALUES` in
+# Jupyter), checks them, then generates and counts.
+
+# %%
+if __name__ == "__main__":
+    # Importing this workload from pytest must not parse the caller's arguments.
+    from notebooks.common.cli import parse_task_args
+
+    try:
+        entity, scale_factor = check_arguments(parse_task_args(TASK_ARGS_DEFINITION, prog="generate_tpch.py"))
+    except ValueError as error:
+        if "ipykernel" in sys.modules:
+            raise
+        print(f"generate_tpch.py: {error}", file=sys.stderr)
+        raise SystemExit(2) from None
+    generate_tpch(entity, scale_factor)

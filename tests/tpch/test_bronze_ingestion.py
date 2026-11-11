@@ -10,15 +10,16 @@ import pytest
 from hypothesis import given, seed, settings, strategies as st
 
 import bronze_ingestion as bronze
-from notebooks.common.cli import parse_task_args
+from notebooks.common.cli import option_name, parse_task_args
 
 HYPOTHESIS_SEED = int(os.environ.get("HYPOTHESIS_SEED", "0"))
 CONFIG = {"storage_path": "s3a://bucket-default-dev/", "catalog_name": "lakehouse_dev", "database_name": "default_lhdev"}
 
 
 def test_task_arguments_need_an_entity_and_default_to_scale_factor_0_01():
-    assert bronze.check_arguments(parse_task_args(bronze.TASK_ARGUMENTS, ["--entity", "orders"])) == ("orders", Decimal("0.01"))
-    assert bronze.WIDGET_LIST == ["entity", "scale_factor"]
+    assert bronze.check_arguments(parse_task_args(bronze.TASK_ARGS_DEFINITION, ["--entity", "orders"])) == ("orders", Decimal("0.01"))
+    example = [f"{option_name(name)}={value}" for name, value in bronze.TASK_ARGS_VALUES.items()]
+    assert bronze.check_arguments(parse_task_args(bronze.TASK_ARGS_DEFINITION, example))  # the Jupyter example is valid
     for arguments in ({"entity": "lineitems", "scale_factor": "0.01"}, {"entity": "orders", "scale_factor": "2"}):
         with pytest.raises(ValueError):
             bronze.check_arguments(arguments)
