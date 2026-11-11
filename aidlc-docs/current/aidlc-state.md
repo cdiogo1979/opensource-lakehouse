@@ -1,72 +1,60 @@
 # AI-DLC State Tracking
 
 ## Project Information
-- **Project Type**: Greenfield
-- **Start Date**: 2026-10-19T11:12:52Z
-- **Current Stage**: CLOSED — workload foundation and Airflow Git Bundle deployment intent archived.
-- **Intent**: Establish environment-specific configuration, Python Spark code, and Airflow DAG locations for the lakehouse repository.
+- **Project Type**: Brownfield
+- **Start Date**: 2026-11-11T02:45:00Z
+- **Current Stage**: CONSTRUCTION - Code Generation (approval pending)
+- **Intent**: A `tpch` subproject with bronze and silver notebooks: bronze generates TPC-H data with the existing DuckDB generator and saves it to bronze tables; silver merges bronze changes into silver tables using bronze CDC. Check the naming conventions for tables and workflows; follow the standard notebook structure; update AGENTS.md as needed, including which Jupyter helpers notebooks use.
+- **Intent ID**: 20261111-tpch-medallion
+- **Previous Intent**: 20261020-lakehouse-workload-foundation (closed; its archive folder was removed in commit 8b322d2)
 
 ## Workspace State
-- **Existing Code**: Yes — generated workload foundation files are present
-- **Programming Languages**: Python
-- **Build System**: None detected
-- **Project Structure**: `configs/`, `notebooks/common/`, `notebooks/workload/`, one branch-versioned `dags/` folder, CI-only `Jenkinsfile`, and the Git bundle branch-selection client
-- **Reverse Engineering Needed**: No
-- **Workspace Root**: /Users/carlosdiogo/code_repo/opensource-lakehouse
+- **Existing Code**: Yes
+- **Programming Languages**: Python (Jupytext notebooks, pytest/Hypothesis)
+- **Build System**: none; `scripts/code_quality.sh` and pytest; CI in `Jenkinsfile`
+- **Workspace Root**: /Users/carlosdiogo/code_repo/opensource-lakehouse-sample-dp
+- **Reverse Engineering Needed**: Yes — focused on the subproject layout, notebook standard, TPC-H generator, and platform table constraints.
+
+## Stage Progress
+- [x] Workspace Detection — brownfield; previous intent closed.
+- [x] Focused Reverse Engineering — approved on 2026-11-11 (with the P2 model).
+- [x] Requirements Analysis — approved on 2026-11-11 (with CR-1).
+- [ ] User Stories — SKIP.
+- [x] Workflow Planning — approved on 2026-11-11.
+- [x] Application Design — approved on 2026-11-11 (D3 names in notebooks, D8 temporary edit).
+- [ ] Units Generation — SKIP (one unit, `tpch`).
+- [x] Functional Design — approved on 2026-11-11.
+- [ ] NFR Requirements, NFR Design, Infrastructure Design — SKIP.
+- [ ] Code Generation — 8 steps generated; awaiting approval.
+- [ ] Build and Test — EXECUTE.
+- [ ] Deploy — EXECUTE (handoff).
+
+## Extension Configuration
+| Extension | Enabled | Decided At |
+|---|---|---|
+| Security Baseline | No | Requirements Analysis (Q7: A) |
+| Property-Based Testing | Partial (PBT-02, 03, 07, 08, 09 enforced) | Requirements Analysis (Q7: A) |
+| Resiliency Baseline | No | Requirements Analysis (Q7: A) |
+| Workflow Conventions | Yes (always enforced) | Workflow start |
+
+## Current Status
+- **Lifecycle Phase**: CONSTRUCTION
+- **Current Stage**: Code Generation (tpch)
+- **Next Stage**: Build and Test
+- **Status**: Awaiting approval of the generated code.
+
+## Follow-ups
+- Platform intent (opensource-lakehouse-infra): workflow JSON params inserted into task args at run time without templating, so a silver lookback can be set when triggering a run (user, 2026-11-11: "Temporary edit now, params later").
 
 ## Intent Lifecycle
 <!-- intent-lifecycle:start -->
 ```json
 {
-  "archive": "aidlc-docs/archive/20261020-lakehouse-workload-foundation",
-  "intent_id": "20261020-lakehouse-workload-foundation",
-  "status": "CLOSED",
-  "summary": "aidlc-docs/archive/20261020-lakehouse-workload-foundation/intent-summary.md",
-  "verification_outcome": "waived",
-  "verification_waiver": {
-    "accepted_by_user": true,
-    "details": "The user approved continuation with documented limitations. Flake8 reports two E203 warnings; Bandit reports 67 low-severity findings; live Airflow parsing of the .airflowignore fix and Spark/Nessie/object-storage integration remain unverified. Compile, 48 unit/property tests, Ruff, and Black passed after formatting."
-  }
+  "current_stage": "CONSTRUCTION - Code Generation",
+  "intent_id": "20261111-tpch-medallion",
+  "name": "TPC-H Medallion Subproject",
+  "previous_intent": "20261020-lakehouse-workload-foundation",
+  "status": "IN_PROGRESS"
 }
 ```
 <!-- intent-lifecycle:end -->
-
-## Code Location Rules
-- **Application Code**: Workspace root (NEVER in aidlc-docs/)
-- **Documentation**: aidlc-docs/ only
-- **Structure patterns**: Follow the approved root-level Airflow/Spark layout in `AGENTS.md`; keep environment YAML in `configs/`, shared Python in `notebooks/common/`, exported Spark scripts in `notebooks/workload/`, and DAGs in `dags/`.
-
-## Extension Configuration
-| Extension | Enabled | Decided At |
-|---|---|---|
-| Security Baseline | No | Requirements Analysis |
-| Property-Based Testing | Yes | Requirements Analysis |
-| Resiliency Baseline | No | Requirements Analysis |
-
-## Stage Progress
-### INCEPTION PHASE
-- [x] Workspace Detection
-- [ ] Reverse Engineering (skipped: greenfield)
-- [x] Requirements Analysis (initial baseline and initialization enhancement amendment approved)
-- [x] Workflow Planning (revised plan approved by user)
-- [x] Workflow Planning — initialization enhancement addendum approved
-- [x] Application Design (approved by user)
-- [x] Units Generation (two-unit artifacts generated and approved)
-
-### CONSTRUCTION PHASE
-- [x] Functional Design — `workload-foundation` baseline and initialization change approved
-- [x] NFR Requirements — `workload-foundation` (approved)
-- [x] NFR Design — `workload-foundation` (approved)
-- [x] Infrastructure Design — `workload-foundation` (approved)
-- [x] Functional Design — `jenkins-deployment` approved
-- [x] NFR Requirements — `jenkins-deployment` approved
-- [x] NFR Design — `jenkins-deployment` approved
-- [x] Infrastructure Design — `jenkins-deployment` (approved)
-- [x] Code Generation — `workload-foundation` initialization and bundle-based environment selection; approved by user
-- [x] Build and Test — verification limitations explicitly accepted by the user; status is waived, not passed
-
-### DEPLOY PHASE
-- [x] Deploy handoff — PR request and ordered deployment instructions reviewed and approved by user
-
-## Current Gate
-**Current Status**: CLOSED. Canonical design records are in `aidlc-docs/knowledge/opensource-lakehouse/`; the full workflow artifacts and audit are archived at `aidlc-docs/archive/20261020-lakehouse-workload-foundation/`. Verification remains waived, not passed: Flake8 reports two E203 warnings, Bandit reports 67 low-severity findings, live Airflow parsing of `.airflowignore` remains pending, and Spark/Nessie/storage integration was not run. No PR, push, or deployment was performed.

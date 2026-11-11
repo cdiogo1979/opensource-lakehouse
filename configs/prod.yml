@@ -2,4 +2,6 @@
 storage_path: "s3a://bucket-default/"
 catalog_name: "lakehouse"
 database_name: "default_lh"
-
+# Spark Structured Streaming checkpoints: this environment's bucket, under checkpoints/.
+# The s3ckpt:// scheme is the platform's checkpoint filesystem (its key is mounted by the platform).
+checkpoint_path: "s3ckpt://bucket-default/checkpoints"

@@ -17,28 +17,38 @@ This is a lakehouse **data product repository**. [README.md](README.md) is the c
 - `aidlc-docs/archive/<intent-id>/`: immutable snapshots and summaries of closed intents. Never edit archived history.
 
 ## Subproject layout
-Every subproject has a folder with the **same name** under `workflows/` and `notebooks/workload/` (and, for AI-DLC work, under `aidlc-docs/knowledge/`). For example, subproject `sample` uses:
+Every subproject has a folder with the **same name** under `workflows/` and `notebooks/workload/` (and, for AI-DLC work, under `aidlc-docs/knowledge/`). For example, subprojects `sample` and `tpch` use:
 
 ```text
 workflows/
-└── sample/
-    ├── test_environment.json
-    └── generate_tpch.json
+├── sample/
+│   ├── test_environment.json
+│   └── generate_tpch.json
+└── tpch/
+    └── tpch_medallion.json
 notebooks/
 ├── common/                 shared by every subproject
 └── workload/
-    └── sample/
-        ├── bronze/                  raw ingestion
-        ├── silver/                  cleaned or conformed data
-        ├── gold/                    curated, consumption-ready data
-        ├── ops/                     operational notebooks run as needed
-        ├── deploy/                  deployment of assets the pipelines don't create
-        └── other/                   notebooks that fit no medallion layer
-            ├── test_environment.py
-            ├── count_sample_rows.py
-            └── generate_tpch.py
+    ├── sample/
+    │   ├── bronze/                  raw ingestion
+    │   ├── silver/                  cleaned or conformed data
+    │   ├── gold/                    curated, consumption-ready data
+    │   ├── ops/                     operational notebooks run as needed
+    │   ├── deploy/                  deployment of assets the pipelines don't create
+    │   └── other/                   notebooks that fit no medallion layer
+    │       ├── test_environment.py
+    │       ├── count_sample_rows.py
+    │       └── generate_tpch.py
+    └── tpch/
+        ├── bronze/
+        │   └── bronze_ingestion.py
+        └── silver/
+            └── silver_processing.py
 aidlc-docs/knowledge/
-└── sample/
+├── sample/
+│   ├── application-design.md
+│   └── functional-design/
+└── tpch/
     ├── application-design.md
     └── functional-design/
 ```
@@ -53,6 +63,12 @@ aidlc-docs/knowledge/
 - **Entry points**: a workflow in `workflows/<project>/` names a notebook of `notebooks/workload/<project>/` in its `entrypoint`: for example `other/generate_tpch.py` or `bronze/load_orders.py` (a file directly in the folder is named without a folder). The platform runs `notebooks/workload/<project>/<entrypoint>` and refuses other folders.
 - **Names**: DAG IDs are `<bundle>-<name>`, without the subproject, so a workflow name must be unique across all subprojects of this repository; CI refuses a repeated name.
 - **New subproject**: create both folders together, with lowercase letters, digits, `_` or `-` in the name; nothing goes directly into `workflows/` or `notebooks/workload/` (a test checks it). Shared code stays in `notebooks/common/`; configuration in `configs/`.
+- **Naming conventions** (as `tpch` applies them; each notebook defines its own names from the config):
+  - **notebooks**: `<layer>_<action>.py` in the layer folder (`bronze_ingestion.py`, `silver_processing.py`);
+  - **bronze tables**: `<project>_<entity>_<source>_brz` (`tpch_region_db_brz`, source `db`); **silver tables**: `<project>_<entity>` (`tpch_region`). All tables live in the environment's one namespace (`database_name`), so the layer is part of the name;
+  - **table locations**: `<storage_path>/<catalog_name>/<database_name>/<table>`, set when the table is created;
+  - **workflows**: `<project>_<purpose>` (`tpch_medallion`); **tasks**: `<target_table>_load` (`tpch_region_db_brz_load`, `tpch_region_load`);
+  - **checkpoints**: `<checkpoint_path>/<project>/<target_table>` (`.../checkpoints/tpch/tpch_region`).
 - **Expected artifacts** when adding or changing a workload, updated together: the notebook in `notebooks/workload/<project>/`, its workflow in `workflows/<project>/` when it is scheduled or orchestrated, environment values in `configs/`, and its tests. Use names that make clear which notebook and settings a workflow uses.
 - **Durable design knowledge** (AI-DLC): one application design per subproject and one consolidated functional design per component under `aidlc-docs/knowledge/<project>/`; drafts and approvals stay in `aidlc-docs/current/` and are promoted at intent closure, with the originals archived.
 
@@ -63,11 +79,13 @@ aidlc-docs/knowledge/
   - use `notebooks.common.job_runtime.start_spark_job(app_name)` for the config and the Spark session, and declare task arguments for `notebooks.common.cli.parse_task_args(...)` (workflow `args` after `--` in Airflow, widgets or `TASK_ARGS` in Jupyter; values are strings, never templated; check them in the job);
   - never configure Spark catalogs, tokens or redaction here: the platform's `lakehouse_spark` does that;
   - structure every notebook in `notebooks/workload/<project>/` as: title, `## Initialization`, `## Imports`, the job's own sections, `## Execution` (only the `__main__` block); a test checks it;
-  - start every notebook in `notebooks/workload/<project>/` with the Initialization section (after the title cell): `# !lakehouse-install-requirements ~/work/opensource-lakehouse-sample-dp` and `# %run ../../../common/jupyter_environment_resolver.py` (from a layer folder; `../../common/...` for a notebook directly in the subproject folder); use `jupyter_input_widget_helper.py` after `WIDGET_LIST` for task arguments;
+  - start every notebook in `notebooks/workload/<project>/` with the Initialization section (after the title cell): `# !lakehouse-install-requirements ~/work/opensource-lakehouse-sample-dp` and `# %run ../../../common/jupyter_environment_resolver.py` (from a layer folder; `../../common/...` for a notebook directly in the subproject folder); the resolver defines `spark` and `config` in Jupyter;
+  - a notebook with task arguments has a `## Task arguments` section after `## Imports`: `TASK_ARGUMENTS` (for `parse_task_args`), `WIDGET_LIST` (the widgets to show, by argument name), then a cell `# %run ../../../common/jupyter_input_widget_helper.py`; the Execution block parses and checks the arguments (`check_arguments`), prints `<notebook>.py: <message>` and exits 2 on a bad value in Airflow, and raises in Jupyter;
   - keep run code under `if __name__ == "__main__":` and stop Spark in `finally:`.
 - **Configs**:
   - the loader accepts only `dev`, `uat` and `prod`, requires `storage_path` and `database_name`, and never falls back across environments;
   - values must be the product's own namespaces and buckets;
+  - `checkpoint_path` (for Spark Structured Streaming) is `s3ckpt://<bucket>/checkpoints` in the environment's own bucket; the platform mounts the key for it. Never use `s3://` or `s3a://` for a checkpoint, and give each stream its own subpath;
   - no credentials, tokens, or endpoints anywhere in the repository.
 - **Dependencies**:
   - Airflow, Spark, PySpark and Python versions belong to the platform; don't pin or install them here.

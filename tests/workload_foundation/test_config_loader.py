@@ -59,3 +59,10 @@ def test_loads_only_the_selected_environment(tmp_path):
     assert config.environment == "uat"
     assert config["storage_path"] == "s3a://uat-bucket/root"
     assert config["database_name"] == "uat_db"
+
+
+@pytest.mark.parametrize("environment", ["dev", "uat", "prod"])
+def test_every_environment_keeps_checkpoints_in_its_own_bucket(environment):
+    config = load_environment_config(environment)
+    bucket = config["storage_path"].split("://", 1)[1].split("/", 1)[0]
+    assert config["checkpoint_path"] == f"s3ckpt://{bucket}/checkpoints"

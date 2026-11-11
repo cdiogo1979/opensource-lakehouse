@@ -17,8 +17,9 @@ The same code runs in two places:
 8. [Configs and environments](#configs-and-environments)
 9. [Working in Jupyter](#working-in-jupyter)
 10. [CI in Jenkins](#ci-in-jenkins)
-11. [How-to](#how-to)
-12. [Limits](#limits)
+11. [The tpch subproject](#the-tpch-subproject)
+12. [How-to](#how-to)
+13. [Limits](#limits)
 
 ## What lives where
 
@@ -63,6 +64,8 @@ workflows/                 One JSON file per Airflow DAG (see the reference belo
   sample/                    subproject "sample"
     test_environment.json      the smoke table: create twice, then count
     generate_tpch.json         TPC-H generation and row-count checks, one task per entity
+  tpch/                      subproject "tpch"
+    tpch_medallion.json        TPC-H bronze then silver, one pair of tasks per entity
 dags/
   lakehouse.py             The platform stub: the only file allowed in dags/
 notebooks/
@@ -78,6 +81,9 @@ notebooks/
         test_environment.py      creates the smoke table
         count_sample_rows.py     counts its rows
         generate_tpch.py         generates TPC-H data with DuckDB and checks one entity's row count
+    tpch/                    subproject "tpch" (the entry points of workflows/tpch/)
+      bronze/bronze_ingestion.py    appends one generated TPC-H entity to its bronze table
+      silver/silver_processing.py   streams bronze changes and merges them into the silver table
 configs/                   Non-secret settings: dev.yml, uat.yml, prod.yml, optional <product>/<env>.yml
 tests/                     pytest and Hypothesis tests for the helpers and workloads
 scripts/code_quality.sh    lint, flake8, bandit (used by CI)
@@ -87,7 +93,7 @@ requirements-dev.txt       Test and lint tools
 AGENTS.md                  Rules for coding agents working here, including the subproject layout
 ```
 
-**Subprojects**: workflows and their notebooks are grouped by subproject, with the same folder name under `workflows/` and `notebooks/workload/` (here `sample`). A workflow in `workflows/<project>/` runs entry points from `notebooks/workload/<project>/`.
+**Subprojects**: workflows and their notebooks are grouped by subproject, with the same folder name under `workflows/` and `notebooks/workload/` (here `sample` and `tpch`). A workflow in `workflows/<project>/` runs entry points from `notebooks/workload/<project>/`.
 
 **Layers inside a subproject's notebooks** (workflows have none): `notebooks/workload/<project>/` may hold the medallion layer folders `bronze/` (raw ingestion), `silver/` (cleaned or conformed data), `gold/` (curated, consumption-ready data), plus `ops/` (operational notebooks run as needed: migrations, data patches, maintenance), `deploy/` (deployment of assets the pipelines don't create, such as views) and `other/` (notebooks that fit no medallion layer; `sample`'s three notebooks live there). A workflow names a layer notebook as `"entrypoint": "bronze/load_orders.py"` or `"other/generate_tpch.py"`. Only these six folders, one level deep:
 
@@ -242,6 +248,7 @@ Workload code runs on one Python environment, the same in Airflow's Spark contai
 
 - **Required keys**: `storage_path` (for example `s3a://bucket-default/`, ending with `/`) and `database_name`, the product's namespace for that environment, for example `default_lh`, `default_lhuat` or `default_lhdev`.
   - **Usually present**: `catalog_name` (`lakehouse`, `lakehouse_uat` or `lakehouse_dev`).
+  - **For streaming jobs**: `checkpoint_path`, `s3ckpt://<bucket>/checkpoints` in the environment's own bucket (`bucket-default-dev`, `bucket-default-uat`, `bucket-default`). `s3ckpt://` is the platform's checkpoint filesystem; the platform mounts the key for it (Airflow: the run's environment; Jupyter: `dev`, for the product's owners and developers). Give each stream its own subpath, `<checkpoint_path>/<project>/<target_table>`.
   - **Other keys**: any other keys, including nested ones, are passed through to the job as read-only values.
 - **Strict loading**: the loader refuses unknown environment names and never falls back from one environment to another. A missing file fails `validate_environment` before any task runs.
 - **One repository, several products**: put each product's settings in `configs/<product>/`; Airflow uses them (the platform sets the product from the bundle). The `configs/<env>.yml` files are the fallback, and the only files Jupyter reads.
@@ -313,6 +320,23 @@ The pipeline stages are:
 5. pytest.
 
 CI doesn't deploy anything: Airflow picks up merged changes from Git by itself.
+
+## The tpch subproject
+
+TPC-H data through a bronze and a silver layer, in the environment's namespace:
+
+| Layer | Notebook | Table | What it does |
+|---|---|---|---|
+| bronze | `bronze/bronze_ingestion.py` | `tpch_<entity>_db_brz` | Generates one entity with DuckDB at `--scale-factor` (default 0.01) and appends it, with `scale_factor` and `bronze_ingestion_timestamp`; append-only |
+| silver | `silver/silver_processing.py` | `tpch_<entity>` | Streams the bronze snapshots added since the last run (checkpoint `<checkpoint_path>/tpch/tpch_<entity>`) and merges the newest row per key (`MERGE_KEYS`); a row is only replaced by a newer one |
+
+- **Workflow** `tpch_medallion` (manual): per entity, `tpch_<entity>_db_brz_load`, then `tpch_<entity>_load`. Each run adds a bronze batch and merges it.
+- **Tables** are created by the first run at `<storage_path>/<catalog_name>/<database_name>/<table>`. The product's writer can't drop tables; ask an owner or the platform team.
+- **Conventions**: notebooks `<layer>_<action>.py`; bronze tables `<project>_<entity>_<source>_brz`; silver tables `<project>_<entity>`; workflows `<project>_<purpose>`; tasks `<target_table>_load`; checkpoints `<checkpoint_path>/<project>/<target_table>` (see [AGENTS.md](AGENTS.md)).
+- **Reprocess silver** (`silver_lookback_days`, default 0): with N > 0, silver deletes the entity's checkpoint and merges the bronze snapshots of the last N days again (safe: rows never get older).
+  - **In Jupyter** (`dev`): set the `silver_lookback_days` widget.
+  - **In uat or prod**: Airflow can't change a task's arguments at trigger time, so temporarily add `"--silver-lookback-days", "<N>"` to the silver tasks' `args` in `workflows/tpch/tpch_medallion.json`, merge, run the DAG once, then revert the change.
+- **Limits**: bronze is append-only; a bronze snapshot that deletes or overwrites rows stops the silver stream. Each checkpoint must have one writer at a time, so don't run the same entity's silver from Jupyter and Airflow at once.
 
 ## How-to
 
