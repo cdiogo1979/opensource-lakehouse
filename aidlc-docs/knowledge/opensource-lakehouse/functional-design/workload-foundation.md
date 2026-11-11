@@ -1,28 +1,28 @@
-# Workload Foundation Functional Design
+# Functional Design — Workload Foundation (shared helpers)
 
-## Environment configuration
+The shared helpers in `notebooks/common/`, used by every subproject in Airflow runs and in Jupyter. Architecture: [`../application-design.md`](../application-design.md). Replaces the retired Nessie/DockerOperator design.
 
-Keep `dev.yml`, `uat.yml`, and `prod.yml` directly in `configs/`. The current workload requires `storage_path` and `database_name`; the loader rejects unsupported environments, missing or invalid files, malformed YAML, non-mapping roots, and invalid required values. It preserves arbitrary additional top-level and nested settings through a generic read-only mapping, and offers a mutable deep-copy conversion when needed. It does not fall back to another environment. Secrets and runtime credentials are external.
+## `config_loader.py`
+- `load_environment_config(environment, config_dir=None, product=None)` → `EnvironmentConfig` (a read-only mapping; `.environment`, `.to_dict()`).
+- Accepts only `dev`, `uat`, `prod` (`SUPPORTED_ENVIRONMENTS`); requires `storage_path` and `database_name` (`REQUIRED_KEYS`); every other key, nested ones included, passes through. With a product (`^[a-z][a-z0-9]{1,19}$`), `configs/<product>/<env>.yml` is read before `configs/<env>.yml` (Airflow only). Never falls back across environments; refuses missing files, malformed YAML, non-mapping roots and invalid required values.
 
-`storage_path` is expected to end in `/`, and `database_name` is assumed to be a clean simple Spark identifier. These are the current workload assumptions; special identifier quoting/path normalization is outside the contract.
+## `cli.py`
+- `parse_args(argv)`: `--environment` and `--config-dir`, before `--`.
+- `parse_task_args(declaration, argv=None, prog=None)`: the job's declared arguments as strings; each name (`[a-z][a-z0-9_]{0,49}`) maps to `{"required": True}`, `{"default": "<text>"}` or `{}`; `scale_factor` is `--scale-factor`. Values come from the command line after `--` (Airflow), else in Jupyter from the notebook's widgets (`LAKEHOUSE_WIDGETS`), else its `TASK_ARGS`. Structural problems are reported together with the usage: exit 2 in Airflow, `TaskArgumentError` in Jupyter. Values are never converted or checked: the notebook checks them.
+- `task_args(argv)`: the raw list after `--`.
 
-## Spark initialization workload
+## `job_runtime.py`
+- `start_spark_job(app_name, argv=None)` → `(spark, config)`: in Airflow it parses `--environment` and `--config-dir`, uses `LAKEHOUSE_PRODUCT`, loads the config and calls the platform's `lakehouse_spark.create_spark_session("<env>-<app_name>", config["catalog_name"])`; in Jupyter it uses `jupyter_environment()` (`LAKEHOUSE_ENVIRONMENT`, default `dev`). A config without `catalog_name` is refused.
 
-`notebooks/workload/init_environment.py` loads the selected config using the common CLI. It issues `CREATE NAMESPACE IF NOT EXISTS` for the configured database/catalog namespace and then writes two deterministic synthetic rows to `sample_spark_job_output` using overwrite mode. The output path is `storage_path + "sample_spark_job_output"`. Only this dedicated table/path may be overwritten. The job does not delete unrelated tables or objects.
+## Jupyter scripts (`%run`)
+- `jupyter_environment_resolver.py`: finds the clone that holds the notebook (`notebooks/common/job_runtime.py` marker), names the application `<env>-<notebook>`, and defines `spark` and `config` in the notebook.
+- `jupyter_input_widget_helper.py`: after `WIDGET_LIST` (distinct argument names), shows one text widget per name and keeps their values across reruns; `parse_task_args` reads them.
 
-The workload does not create an S3 directory marker through Hadoop S3A. The table write creates the object keys/prefix; this avoids requiring `S3AFileSystem` merely to initialize a path. Errors propagate to Airflow.
+## Sample workloads (`notebooks/workload/sample/other/`)
+`test_environment.py` (creates the smoke table twice), `count_sample_rows.py` (counts it), `generate_tpch.py` (DuckDB TPC-H generation with row-count checks); workflows `workflows/sample/test_environment.json` and `generate_tpch.json`.
 
-## Airflow DAG behavior
+## Failure behavior
+Config, argument, import, catalog or storage failures fail the task with the message in the (redacted) task log; in Jupyter they raise in the cell. Nothing falls back to another environment or identity.
 
-The thin declaration `dags/init_environment.py` supplies the Python entrypoint and manual schedule. `dags/dag_factory.py` and `dag_defaults.py` select environment/config and DAG prefix from the bundle checkout identity, validate configuration, and construct the standard DAG and Docker Spark task. Helper files are excluded from discovery by `.airflowignore` but remain importable by the declaration.
-
-`lakehouse-main`/`lakehouse-prod` selects `prod.yml` and a `main-` DAG prefix; `lakehouse-uat` selects `uat.yml` and `uat-`; other names select `dev.yml` and `dev-`. The Docker task mounts the bundle checkout read-only and uses the same version as the DAG run. Airflow image, master, Docker endpoint/network, AWS region, and service credentials are deployment inputs.
-
-## Invariants and failure behavior
-
-- Environment selection is explicit from bundle identity; config loading never silently falls back.
-- Repeated namespace initialization is safe.
-- The only overwrite is the named synthetic smoke table at its dedicated child path.
-- Unrelated catalog/storage state remains unchanged.
-- Config, import, mount, catalog, or storage failures fail the Airflow task and remain visible in logs.
-- Integration against the live `.airflowignore` update and Spark/Nessie/S3 was not completed in this intent; see the archived Build and Test record.
+## Verification
+`tests/workload_foundation/` (config loader, CLI, task arguments, job runtime, Jupyter scripts, notebook structure, product bundles, properties). Latest: 2026-11-11, 112 passed with the `tpch` suite (2 DuckDB skips locally; DuckDB tests pass in the Spark runtime image and in Jenkins).

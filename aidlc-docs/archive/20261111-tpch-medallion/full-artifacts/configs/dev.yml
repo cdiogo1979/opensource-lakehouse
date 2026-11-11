@@ -1,0 +1,8 @@
+# RustFS object prefix and Hive catalog namespace for development.
+# Replace these conspicuous placeholders with approved UAT targets before execution.
+storage_path: "s3a://bucket-default-dev/"
+catalog_name: "lakehouse_dev"
+database_name: "default_lhdev"
+# Spark Structured Streaming checkpoints: this environment's bucket, under checkpoints/.
+# The s3ckpt:// scheme is the platform's checkpoint filesystem (its key is mounted by the platform).
+checkpoint_path: "s3ckpt://bucket-default-dev/checkpoints"

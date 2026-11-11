@@ -1,0 +1,7 @@
+# Replace these conspicuous placeholders with approved UAT targets before execution.
+storage_path: "s3a://bucket-default-uat/"
+catalog_name: "lakehouse_uat"
+database_name: "default_lhuat"
+# Spark Structured Streaming checkpoints: this environment's bucket, under checkpoints/.
+# The s3ckpt:// scheme is the platform's checkpoint filesystem (its key is mounted by the platform).
+checkpoint_path: "s3ckpt://bucket-default-uat/checkpoints"

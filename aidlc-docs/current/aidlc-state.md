@@ -3,7 +3,7 @@
 ## Project Information
 - **Project Type**: Brownfield
 - **Start Date**: 2026-11-11T02:45:00Z
-- **Current Stage**: CONSTRUCTION - Code Generation (approval pending)
+- **Current Stage**: DEPLOY - Deploy
 - **Intent**: A `tpch` subproject with bronze and silver notebooks: bronze generates TPC-H data with the existing DuckDB generator and saves it to bronze tables; silver merges bronze changes into silver tables using bronze CDC. Check the naming conventions for tables and workflows; follow the standard notebook structure; update AGENTS.md as needed, including which Jupyter helpers notebooks use.
 - **Intent ID**: 20261111-tpch-medallion
 - **Previous Intent**: 20261020-lakehouse-workload-foundation (closed; its archive folder was removed in commit 8b322d2)
@@ -25,9 +25,9 @@
 - [ ] Units Generation — SKIP (one unit, `tpch`).
 - [x] Functional Design — approved on 2026-11-11.
 - [ ] NFR Requirements, NFR Design, Infrastructure Design — SKIP.
-- [ ] Code Generation — 8 steps generated; awaiting approval.
-- [ ] Build and Test — EXECUTE.
-- [ ] Deploy — EXECUTE (handoff).
+- [x] Code Generation — approved on 2026-11-11.
+- [x] Build and Test — approved on 2026-11-11 (verification complete).
+- [x] Deploy — handoff approved on 2026-11-11; closure approved.
 
 ## Extension Configuration
 | Extension | Enabled | Decided At |
@@ -38,10 +38,10 @@
 | Workflow Conventions | Yes (always enforced) | Workflow start |
 
 ## Current Status
-- **Lifecycle Phase**: CONSTRUCTION
-- **Current Stage**: Code Generation (tpch)
-- **Next Stage**: Build and Test
-- **Status**: Awaiting approval of the generated code.
+- **Lifecycle Phase**: DEPLOY
+- **Current Stage**: Deploy
+- **Next Stage**: Intent closure
+- **Status**: Closure approved; compaction in progress.
 
 ## Follow-ups
 - Platform intent (opensource-lakehouse-infra): workflow JSON params inserted into task args at run time without templating, so a silver lookback can be set when triggering a run (user, 2026-11-11: "Temporary edit now, params later").
@@ -50,15 +50,20 @@
 
 - Platform: StarRocks loses its runtime LDAP bind pattern when the FE restarts (seen 2026-11-11 after memory pressure); re-apply it automatically (for example from the FE healthcheck or a scheduled reconcile) instead of only at `lakehouse.sh start`.
 
+- Platform: raise JUPYTERHUB_SINGLEUSER_MEMORY_LIMIT above 2G (each notebook with a Spark session holds about 1 to 1.5 GiB until its kernel shuts down; two at once were OOM-killed on 2026-11-11).
+
 ## Intent Lifecycle
 <!-- intent-lifecycle:start -->
 ```json
 {
-  "current_stage": "CONSTRUCTION - Code Generation",
+  "archive": "aidlc-docs/archive/20261111-tpch-medallion",
+  "current_stage": "DEPLOY - Deploy",
+  "failure": "Manifest artifact does not exist: /Users/carlosdiogo/code_repo/opensource-lakehouse-sample-dp/aidlc-docs/knowledge/tpch/application-design.md",
   "intent_id": "20261111-tpch-medallion",
   "name": "TPC-H Medallion Subproject",
   "previous_intent": "20261020-lakehouse-workload-foundation",
-  "status": "IN_PROGRESS"
+  "status": "CLOSED",
+  "summary": "aidlc-docs/archive/20261111-tpch-medallion/intent-summary.md"
 }
 ```
 <!-- intent-lifecycle:end -->
