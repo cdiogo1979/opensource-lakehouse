@@ -89,6 +89,10 @@ aidlc-docs/knowledge/
   - one statement per file: `CREATE MATERIALIZED VIEW ${mv_database}.<file name>`, a `COMMENT` describing it, a `REFRESH` clause, and `${catalog}.${namespace}.<table>` for every source table; no other placeholder or statement; read silver (or gold) tables, never bronze;
   - don't write the `lakehouse-mv` marker yourself: the platform adds it; removing a file drops the deployed view;
   - add a test for the view's intent (as `tests/tpch/test_materialized_views.py` does).
+- **Security alerts** (Dependabot):
+  - a dependency fix is a normal change: branch, pull request (CI), `uat`, then `main`; bump only `requirements.txt` or `requirements-dev.txt`;
+  - never pin, override or add a platform package (pandas, pyarrow, PySpark, ...) here to fix an alert: that is a change to the platform's lock, in the platform repository;
+  - dismiss an alert only with a reason in its comment.
 - **Configs**:
   - the loader accepts only `dev`, `uat` and `prod`, requires `storage_path` and `database_name`, and never falls back across environments;
   - values must be the product's own namespaces and buckets;

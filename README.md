@@ -20,7 +20,8 @@ The same code runs in two places:
 11. [Materialized views](#materialized-views)
 12. [The tpch subproject](#the-tpch-subproject)
 13. [How-to](#how-to)
-14. [Limits](#limits)
+14. [Security alerts](#security-alerts)
+15. [Limits](#limits)
 
 ## What lives where
 
@@ -390,6 +391,20 @@ PATH=".venv/bin:$PATH" scripts/code_quality.sh all
 The workflow validator runs in Jenkins. With a copy of the platform's `lakehouse_dags` package, you can also run it yourself: `PYTHONPATH=<platform>/infra/airflow python3 -m lakehouse_dags.validate .`
 
 **Remove a workflow**: delete its JSON file. After the next bundle refresh the DAG disappears from Airflow, and its run history stays in Airflow's records.
+
+## Security alerts
+
+GitHub's Dependabot alerts (the repository's **Security** tab) cover the files that pin packages here:
+
+- `requirements.txt`: this repository's extra packages for its workload code (today `duckdb`);
+- `requirements-dev.txt`: the test and code-quality tools (CI only, never deployed). `PyYAML`, `hypothesis` and `pytest` aren't pinned, so an alert for them may apply to a version CI no longer installs;
+- the GitHub Actions entry GitHub lists for the repository.
+
+They don't cover what the code runs on: pandas, numpy, pyarrow, PyYAML, PySpark and the rest of the platform's shared environment, and the Spark and Jupyter images. Those come from the lakehouse platform's lock and images, and their alerts (Dependabot and Trivy) are in the platform repository ([Vulnerability alerts](https://github.com/cdiogo1979/opensource-lakehouse-infra/blob/main/docs/reference/vulnerability-alerts.md)).
+
+**Fixing one** is a normal change: branch, bump the pin in `requirements.txt` or `requirements-dev.txt`, open a pull request (CI checks `requirements.txt` against the platform lock, so a version that conflicts with a platform package fails before merge), then `uat` and `main`. If the fix needs a newer platform package, ask the platform team: it's a platform change, never an override here.
+
+**Dismissing one** is fine when it doesn't apply: say why in the dismissal (for example "test tool, never deployed" or "vulnerable feature not used"). This repository has no Dependabot update pull requests; alerts only.
 
 ## Limits
 

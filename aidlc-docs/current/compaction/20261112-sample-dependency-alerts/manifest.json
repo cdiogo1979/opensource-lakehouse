@@ -1,0 +1,46 @@
+{
+  "intent_id": "20261112-sample-dependency-alerts",
+  "name": "Sample Dependency Alerts",
+  "objective": "Document what the repository's Dependabot alerts cover and how to act on them, alongside the platform's coverage.",
+  "date": "2026-11-12",
+  "scope": "Included: README section, AGENTS.md rules, canonical knowledge. Excluded: Dependabot update PRs (user decision), automation.",
+  "workstreams": [
+    "docs"
+  ],
+  "verification": {
+    "status": "passed",
+    "details": "pytest 110 passed, 2 skipped; code quality PASS (documentation only)."
+  },
+  "artifact_inventory_complete": true,
+  "summary": {
+    "major_requirements": [
+      "FR-1 README Security alerts section.",
+      "FR-2 AGENTS.md rules."
+    ],
+    "design_decisions": [
+      "Alerts only, plus triage notes (no update PRs)."
+    ],
+    "implementation_decisions": [
+      "Points to the platform's vulnerability-alerts page for the shared environment and images."
+    ],
+    "deviations": [],
+    "superseded_decisions": []
+  },
+  "canonical_updates": [
+    {
+      "path": "aidlc-docs/knowledge/opensource-lakehouse/application-design.md",
+      "content": "# Application Design \u2014 opensource-lakehouse-sample-dp (repository level)\n\nThis repository is a lakehouse **data product repository** for the `opensource-lakehouse-infra` platform. It holds workflow declarations, Spark workloads (Jupytext notebooks), non-secret configuration and tests; the platform builds and runs the DAGs. Subproject design: [`../tpch/application-design.md`](../tpch/application-design.md). This replaces the retired design (Nessie, `DockerOperator`, an in-repository DAG factory, the bundle client). History: the [TPC-H Medallion intent archive](../../archive/20261111-tpch-medallion/intent-summary.md).\n\n## Platform contract\n| This repository | The platform (`opensource-lakehouse-infra`) |\n|---|---|\n| `workflows/<project>/<name>.json` (workflow JSON v1) | The `lakehouse_dags` factory builds `<bundle>-<name>` DAGs from them; Airflow Git bundles `<product>-main` (prod) and `<product>-uat` (uat) |\n| `notebooks/workload/<project>/<layer>/*.py` | One Spark container per DAG run, the bundle mounted read-only; `spark-submit` per task |\n| `notebooks/common/` helpers | `lakehouse_spark.create_spark_session` (catalogs, token, redaction, checkpoint keys) |\n| `configs/<env>.yml`, optional `configs/<product>/<env>.yml` | The writer token per run; Polaris-vended storage credentials; checkpoint keys |\n| `dags/lakehouse.py` (fixed stub) | The CI validator `lakehouse-validate-workflows`, the shared Python 3.10 lock |\n| `requirements.txt` (pinned extras, e.g. `duckdb==1.5.6`) | Installed per Airflow run and with `lakehouse-install-requirements` in Jupyter |\n\n## Subprojects and layers\n- Each subproject has the same folder name under `workflows/` and `notebooks/workload/` (and `aidlc-docs/knowledge/`): today `sample` (notebooks in `other/`) and `tpch` (`bronze/`, `silver/`).\n- Notebook layer folders: `bronze/`, `silver/`, `gold/`, `ops/`, `deploy/`, `other/`, one level deep; workflows have no layers. A workflow's `entrypoint` is relative to `notebooks/workload/<project>/` (for example `bronze/bronze_ingestion.py`); full paths are refused.\n- DAG IDs don't include the subproject, so workflow names are unique across the repository.\n\n## Naming conventions (AGENTS.md)\n- Notebooks `<layer>_<action>.py`; bronze tables `<project>_<entity>_<source>_brz`; silver tables `<project>_<entity>`; table locations `<storage_path>/<catalog_name>/<database_name>/<table>`; workflows `<project>_<purpose>`; tasks `<target_table>_load`; checkpoints `<checkpoint_path>/<project>/<target_table>`.\n- All tables of an environment live in its one namespace (`database_name`): products can't create namespaces.\n- Materialized views: `materialized_views/<project>/<name>.sql`, named `mv_<project>_<purpose>` (or for an aggregate's dimensions), one `CREATE MATERIALIZED VIEW ${mv_database}.<name>` statement each with `${catalog}.${namespace}.<table>` sources; developed by hand in the dev MV database, deployed to UAT and prod by the platform as the writer.\n\n## Notebook standard\nTitle cell (purpose, inputs, effects); `## Initialization` (`# !lakehouse-install-requirements ~/work/opensource-lakehouse-sample-dp`, `# %run ../../../common/jupyter_environment_resolver.py`, commented in Airflow); `## Imports`; for task arguments a `## Task arguments` section (`TASK_ARGS_DEFINITION`, the arguments the job accepts, used in Airflow and Jupyter; then `TASK_ARGS_VALUES`, the Jupyter-only values with a working example; each with a comment; no input widgets); the job's own sections; `## Execution` with only the `if __name__ == \"__main__\":` block, which stops Spark in `finally:`. A test checks the structure.\n\n## Environments\n`prod` (bundle `-main`), `uat` (`-uat`), `dev` (Jupyter only). Configs need `storage_path`, `database_name`, usually `catalog_name`, and for streaming jobs `checkpoint_path: s3ckpt://<bucket>/checkpoints`. No secrets anywhere in the repository.\n\n## Security alerts\n- Dependabot alerts cover `requirements.txt` (the product's extras) and `requirements-dev.txt` (CI tools); the shared environment and images are covered in the platform repository. A fix is a normal change within the platform lock's constraints; platform packages are never pinned or overridden here; dismissals carry a reason. No Dependabot update PRs.\n\n## Operational limits\n- A DAG run's tasks share one Spark container: order tasks (`runs_after`) so few Spark jobs run at once (the workflow format has no parallelism limit; platform follow-up).\n- A Jupyter server has 2 GiB: one notebook with a Spark session at a time (shut down a kernel before starting another).\n- The product writer can't drop tables or create namespaces.\n"
+    }
+  ],
+  "artifacts": [
+    "aidlc-docs/current/inception",
+    "aidlc-docs/current/deploy",
+    "README.md",
+    "AGENTS.md",
+    "aidlc-docs/knowledge/opensource-lakehouse/application-design.md"
+  ],
+  "cleanup_paths": [
+    "aidlc-docs/current/inception",
+    "aidlc-docs/current/deploy"
+  ]
+}

@@ -28,6 +28,9 @@ Title cell (purpose, inputs, effects); `## Initialization` (`# !lakehouse-instal
 ## Environments
 `prod` (bundle `-main`), `uat` (`-uat`), `dev` (Jupyter only). Configs need `storage_path`, `database_name`, usually `catalog_name`, and for streaming jobs `checkpoint_path: s3ckpt://<bucket>/checkpoints`. No secrets anywhere in the repository.
 
+## Security alerts
+- Dependabot alerts cover `requirements.txt` (the product's extras) and `requirements-dev.txt` (CI tools); the shared environment and images are covered in the platform repository. A fix is a normal change within the platform lock's constraints; platform packages are never pinned or overridden here; dismissals carry a reason. No Dependabot update PRs.
+
 ## Operational limits
 - A DAG run's tasks share one Spark container: order tasks (`runs_after`) so few Spark jobs run at once (the workflow format has no parallelism limit; platform follow-up).
 - A Jupyter server has 2 GiB: one notebook with a Spark session at a time (shut down a kernel before starting another).
